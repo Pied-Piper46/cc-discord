@@ -460,6 +460,7 @@
     "dependencies": [
       "jsr:@david/dax@~0.43.2",
       "jsr:@std/fs@^1.0.19",
+      "jsr:@std/path@^1.1.1",
       "npm:@anthropic-ai/claude-code@latest",
       "npm:discord.js@^14.21.0"
     ]
