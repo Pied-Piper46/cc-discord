@@ -7,11 +7,12 @@ import {
   listSessions,
   selectSession,
 } from "./cli.ts";
-import { loadConfig, Config } from "./config.ts";
+import { loadConfig } from "./config.ts";
 import { t } from "./i18n.ts";
 import { SimpleMessageBus } from "./message-bus.ts";
 import { UserActor } from "./actors/user-actor.ts";
 import { ClaudeCodeActor } from "./actors/claude-code-actor.ts";
+import { GeminiCliActor } from "./actors/gemini-cli-actor.ts";
 import { DebugActor } from "./actors/debug-actor.ts";
 import { AutoResponderActor } from "./actors/auto-responder-actor.ts";
 import { DiscordAdapter } from "./adapter/discord-adapter.ts";
@@ -66,12 +67,21 @@ async function main() {
   const userActor = new UserActor();
   const autoResponderActor = new AutoResponderActor();
 
-  // Select assistant Actor based on debug mode
-  const assistantActor = config.debugMode
-    ? new DebugActor("assistant")
-    : new ClaudeCodeActor(config, "assistant");
+  // Select assistant Actor based on configuration
+  let assistantActor;
+  if (config.debugMode) {
+    assistantActor = new DebugActor("assistant");
+  } else if (config.useGemini) {
+    assistantActor = new GeminiCliActor(config, "assistant");
+  } else {
+    assistantActor = new ClaudeCodeActor(config, "assistant");
+  }
+
   // Streaming用に MessageBus を注入（後方互換: DebugActor へは未注入）
-  if (assistantActor instanceof ClaudeCodeActor) {
+  if (
+    assistantActor instanceof ClaudeCodeActor ||
+    assistantActor instanceof GeminiCliActor
+  ) {
     assistantActor.setMessageBus(bus);
   }
 

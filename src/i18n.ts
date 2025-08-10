@@ -39,6 +39,9 @@ interface LocaleMessages {
       apiKeyBillingRisk: string;
       apiKeyIgnored: string;
     };
+    errors: {
+      geminiApiKeyMissing: string;
+    };
   };
 
   // CLI messages
@@ -192,6 +195,9 @@ const messages: Record<Locale, LocaleMessages> = {
         apiKeyBillingRisk: "この API キーを設定すると予期しない課金が発生する可能性があります。",
         apiKeyIgnored: "設定された API キーは無視されます。環境変数から削除することを推奨します。",
       },
+      errors: {
+        geminiApiKeyMissing: "❌ Gemini が有効になっていますが、GEMINI_API_KEY が設定されていません",
+      },
     },
     cli: {
       help: {
@@ -338,6 +344,9 @@ const messages: Record<Locale, LocaleMessages> = {
         apiKeyNotNeeded: "Warning: ANTHROPIC_API_KEY is set but not needed. Claude Code uses internal authentication.",
         apiKeyBillingRisk: "Setting this API key may cause unexpected billing charges.",
         apiKeyIgnored: "The API key will be ignored. We recommend removing it from environment variables.",
+      },
+      errors: {
+        geminiApiKeyMissing: "❌ Gemini is enabled but GEMINI_API_KEY is not set",
       },
     },
     cli: {

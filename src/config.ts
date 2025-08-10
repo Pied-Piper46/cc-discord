@@ -21,6 +21,12 @@ export interface Config {
   streamingShowThinking?: boolean;
   streamingShowDone?: boolean;
   streamingShowAbort?: boolean;
+  // Gemini configuration
+  useGemini?: boolean;
+  geminiApiKey?: string;
+  geminiModel?: string;
+  geminiMaxTokens?: number;
+  geminiTemperature?: number;
 }
 
 export interface EnvConfig {
@@ -33,6 +39,12 @@ export interface EnvConfig {
   ANTHROPIC_API_KEY?: string;
   // Claude Code permission mode
   CLAUDE_PERMISSION_MODE?: string;
+  // Gemini configuration
+  GEMINI_API_KEY?: string;
+  GEMINI_MODEL?: string;
+  GEMINI_MAX_TOKENS?: string;
+  GEMINI_TEMPERATURE?: string;
+  USE_GEMINI?: string;
   // Legacy support
   CC_DISCORD_TOKEN?: string;
   CC_DISCORD_CHANNEL_ID?: string;
@@ -100,6 +112,19 @@ export function loadConfig(debugMode = false): Config | null {
     }
   }
 
+  // Parse Gemini configuration
+  const useGemini = env.USE_GEMINI === "true" || env.USE_GEMINI === "1";
+  const geminiApiKey = env.GEMINI_API_KEY;
+  const geminiModel = env.GEMINI_MODEL || "gemini-pro";
+  const geminiMaxTokens = env.GEMINI_MAX_TOKENS ? parseInt(env.GEMINI_MAX_TOKENS) : undefined;
+  const geminiTemperature = env.GEMINI_TEMPERATURE ? parseFloat(env.GEMINI_TEMPERATURE) : undefined;
+
+  // Warn if Gemini is enabled but API key is missing
+  if (useGemini && !geminiApiKey) {
+    console.error(t("config.errors.geminiApiKeyMissing"));
+    return null;
+  }
+
   return {
     discordToken: discordToken!,
     channelId: channelId!,
@@ -119,6 +144,12 @@ export function loadConfig(debugMode = false): Config | null {
     streamingShowThinking: true,
     streamingShowDone: true,
     streamingShowAbort: true,
+    // Gemini configuration
+    useGemini,
+    geminiApiKey,
+    geminiModel,
+    geminiMaxTokens,
+    geminiTemperature,
   };
 }
 
