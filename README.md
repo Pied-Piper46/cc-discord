@@ -108,6 +108,30 @@ NEVER_SLEEP=false            # Set to true for auto-task execution
 
 **Important**: Claude Code uses internal authentication. Do NOT set `ANTHROPIC_API_KEY` as it may cause unexpected billing charges.
 
+### Security Settings
+
+1. **Claude Code Permission Mode**:
+   ```bash
+   CLAUDE_PERMISSION_MODE=ask  # Default: "ask" (recommended)
+   ```
+   - `ask`: Prompt for user confirmation before executing commands (recommended)
+   - `bypassPermissions`: Execute commands without confirmation (dangerous)
+
+2. **Multi-User Access Control**:
+   ```bash
+   DISCORD_ALLOWED_USERS=user_id1,user_id2,user_id3
+   ```
+   - Comma-separated list of Discord user IDs allowed to use the bot
+   - If not set, only the `DISCORD_CLIENT_ID` user can access
+
+3. **Audit Logging**:
+   - All user actions, auth failures, and bot responses are logged to `./logs/audit/`
+   - Logs are in JSON format with daily rotation
+
+4. **Shell Command Execution**:
+   - Shell command execution (`!command`) is disabled for security reasons
+   - If needed, modify the source code to implement with a whitelist approach
+
 ## Usage
 
 ### Basic Usage

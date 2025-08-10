@@ -10,7 +10,9 @@
     "lint": "deno lint",
     "test": "deno test src/tests/",
     "start:debug": "deno run -A --env src/main.ts --debug",
-    "start:old": "deno run -A --env ccdiscord.ts"
+    "start:old": "deno run -A --env ccdiscord.ts",
+    "deps:update": "sh -c 'rm -f deno.lock && deno cache -r --lock=deno.lock src/main.ts'",
+    "claude:diagnose": "deno run -A --env src/tools/claude-diagnose.ts"
   },
   "compilerOptions": {
     "lib": ["deno.window"]
@@ -37,7 +39,7 @@
     }
   },
   "imports": {
-    "@anthropic-ai/claude-code": "npm:@anthropic-ai/claude-code@^1.0.58",
+    "@anthropic-ai/claude-code": "npm:@anthropic-ai/claude-code@latest",
     "@david/dax": "jsr:@david/dax@^0.43.2",
     "discord.js": "npm:discord.js@^14.21.0"
   }

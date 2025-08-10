@@ -1,6 +1,12 @@
 #!/usr/bin/env -S deno run -A --env
 
-import { parseCliOptions, showHelp, validateOptions, listSessions, selectSession } from "./cli.ts";
+import {
+  parseCliOptions,
+  showHelp,
+  validateOptions,
+  listSessions,
+  selectSession,
+} from "./cli.ts";
 import { loadConfig, Config } from "./config.ts";
 import { t } from "./i18n.ts";
 import { SimpleMessageBus } from "./message-bus.ts";
@@ -59,11 +65,15 @@ async function main() {
   // Create each Actor
   const userActor = new UserActor();
   const autoResponderActor = new AutoResponderActor();
-  
+
   // Select assistant Actor based on debug mode
   const assistantActor = config.debugMode
     ? new DebugActor("assistant")
     : new ClaudeCodeActor(config, "assistant");
+  // Streaming用に MessageBus を注入（後方互換: DebugActor へは未注入）
+  if (assistantActor instanceof ClaudeCodeActor) {
+    assistantActor.setMessageBus(bus);
+  }
 
   // Register Actors
   bus.register(userActor);
@@ -78,7 +88,11 @@ async function main() {
 ${t("main.startup.title")}
 ${t("main.startup.mode")}: ${config.debugMode ? "Debug" : "Production"}
 ${t("main.startup.neverSleep")}: ${config.neverSleep ? "Enabled" : "Disabled"}
-${config.sessionId ? `${t("main.startup.resumeSession")}: ${config.sessionId}` : t("main.startup.newSession")}
+${
+  config.sessionId
+    ? `${t("main.startup.resumeSession")}: ${config.sessionId}`
+    : t("main.startup.newSession")
+}
 ===========================================
 `);
 
@@ -110,7 +124,7 @@ ${config.sessionId ? `${t("main.startup.resumeSession")}: ${config.sessionId}` :
     // Never Sleep mode demo
     if (config.neverSleep) {
       console.log(`\n${t("main.debug.neverSleepDemo")}`);
-      
+
       const idleCheck: ActorMessage = {
         id: crypto.randomUUID(),
         from: "timer",
@@ -133,11 +147,11 @@ ${config.sessionId ? `${t("main.startup.resumeSession")}: ${config.sessionId}` :
   // Discord connection (when not in debug mode)
   if (!config.debugMode) {
     const discordAdapter = new DiscordAdapter(config, bus);
-    
+
     try {
       await discordAdapter.start();
       console.log(`\n${t("main.discord.connected")}`);
-      
+
       // Handle process termination
       Deno.addSignalListener("SIGINT", async () => {
         console.log(`\n${t("main.discord.shutdown")}`);
@@ -145,7 +159,7 @@ ${config.sessionId ? `${t("main.startup.resumeSession")}: ${config.sessionId}` :
         await bus.stopAll();
         Deno.exit(0);
       });
-      
+
       // Maintain connection
       await new Promise(() => {});
     } catch (error) {

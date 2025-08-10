@@ -117,6 +117,7 @@ interface LocaleMessages {
     failedSetup: string;
     failedCreateThread: string;
     failedSendMessage: string;
+    userNotAllowed: string;
     clientError: string;
     sessionInfo: {
       title: string;
@@ -266,6 +267,7 @@ const messages: Record<Locale, LocaleMessages> = {
       failedSetup: "チャンネルのセットアップに失敗しました:",
       failedCreateThread: "スレッドの作成に失敗しました:",
       failedSendMessage: "メッセージの送信に失敗しました:",
+      userNotAllowed: "このボットを使用する権限がありません。",
       clientError: "Discord クライアントエラー:",
       sessionInfo: {
         title: "セッション情報",
@@ -413,6 +415,7 @@ const messages: Record<Locale, LocaleMessages> = {
       failedSetup: "Failed to setup channel:",
       failedCreateThread: "Failed to create thread:",
       failedSendMessage: "Failed to send message:",
+      userNotAllowed: "You are not authorized to use this bot.",
       clientError: "Discord client error:",
       sessionInfo: {
         title: "Session Information",

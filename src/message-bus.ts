@@ -1,8 +1,15 @@
-import type { Actor, ActorMessage, ActorResponse, MessageBus } from "./types.ts";
+import type {
+  Actor,
+  ActorMessage,
+  ActorResponse,
+  MessageBus,
+} from "./types.ts";
 
 // MessageBus that manages messaging between Actors
 export class SimpleMessageBus implements MessageBus {
   private actors: Map<string, Actor> = new Map();
+  // Lightweight listener registry for adapter-side event subscriptions (e.g. streaming)
+  private listeners: Set<(message: ActorMessage) => void> = new Set();
 
   register(actor: Actor): void {
     console.log(`[MessageBus] Registering actor: ${actor.name}`);
@@ -16,13 +23,15 @@ export class SimpleMessageBus implements MessageBus {
 
   async send(message: ActorMessage): Promise<ActorResponse | null> {
     const targetActor = this.actors.get(message.to);
-    
+
     if (!targetActor) {
       console.log(`[MessageBus] Actor not found: ${message.to}`);
       return null;
     }
 
-    console.log(`[MessageBus] Sending message from ${message.from} to ${message.to}`);
+    console.log(
+      `[MessageBus] Sending message from ${message.from} to ${message.to}`
+    );
     return await targetActor.handleMessage(message);
   }
 
@@ -46,6 +55,27 @@ export class SimpleMessageBus implements MessageBus {
     }
 
     return responses;
+  }
+
+  // Adapter/listener APIs (non-breaking additive)
+  addListener(listener: (message: ActorMessage) => void): void {
+    this.listeners.add(listener);
+  }
+
+  removeListener(listener: (message: ActorMessage) => void): void {
+    this.listeners.delete(listener);
+  }
+
+  async emit(message: ActorMessage): Promise<void> {
+    // Deliver to listeners only; does not route through Actor.handleMessage
+    if (this.listeners.size === 0) return;
+    for (const listener of this.listeners) {
+      try {
+        listener(message);
+      } catch (e) {
+        console.error("[MessageBus] Listener error:", e);
+      }
+    }
   }
 
   // Utility methods

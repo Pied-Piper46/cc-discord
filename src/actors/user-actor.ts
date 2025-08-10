@@ -23,7 +23,9 @@ export class UserActor implements Actor {
     originalMessageId?: string
   ): ActorResponse {
     return {
-      id: originalMessageId ? `${originalMessageId}-response` : crypto.randomUUID(),
+      id: originalMessageId
+        ? `${originalMessageId}-response`
+        : crypto.randomUUID(),
       from: this.name,
       to,
       type,
@@ -89,14 +91,14 @@ export class UserActor implements Actor {
         return this.createResponse(
           message.from,
           "help-response",
-          { 
+          {
             commands: [
               "!reset / !clear - Reset conversation",
               "!stop - Stop running tasks",
               "!exit - Exit bot",
               "!help - Show this help",
               "!<command> - Execute shell command",
-            ]
+            ],
           },
           message.id
         );
@@ -111,7 +113,7 @@ export class UserActor implements Actor {
             message.id
           );
         }
-        
+
         return this.createResponse(
           message.from,
           "unknown-command",
@@ -121,7 +123,10 @@ export class UserActor implements Actor {
     }
   }
 
-  private handleTextMessage(message: ActorMessage, text: string): ActorResponse {
+  private handleTextMessage(
+    message: ActorMessage,
+    text: string
+  ): ActorResponse {
     // Check for special commands
     if (text.startsWith("!")) {
       const command = text.substring(1).split(" ")[0];
@@ -130,11 +135,16 @@ export class UserActor implements Actor {
 
     // Route regular messages to appropriate Actor
     const targetActor = this.determineTargetActor(text);
-    
+
     return this.createResponse(
       targetActor,
       "user-message",
-      { text, originalFrom: message.from },
+      {
+        text,
+        originalFrom: message.from,
+        originalMessageId: message.id,
+        channelId: (message.payload as { channelId?: string }).channelId,
+      },
       message.id
     );
   }
@@ -144,11 +154,14 @@ export class UserActor implements Actor {
     if (text.toLowerCase().includes("debug")) {
       return "debug";
     }
-    
-    if (text.toLowerCase().includes("task") || text.toLowerCase().includes("todo")) {
+
+    if (
+      text.toLowerCase().includes("task") ||
+      text.toLowerCase().includes("todo")
+    ) {
       return "auto-responder";
     }
-    
+
     // Default to assistant (ClaudeCode or Debug)
     return "assistant";
   }
