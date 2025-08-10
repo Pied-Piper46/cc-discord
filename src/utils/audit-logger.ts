@@ -1,10 +1,16 @@
 // Audit logger for security events
-import { ensureDir } from "https://deno.land/std@0.208.0/fs/ensure_dir.ts";
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { ensureDir } from "@std/fs";
+import { join } from "@std/path";
 
 export interface AuditEvent {
   timestamp: Date;
-  eventType: "AUTH_FAILED" | "COMMAND_BLOCKED" | "USER_MESSAGE" | "BOT_RESPONSE" | "SESSION_START" | "SESSION_END";
+  eventType:
+    | "AUTH_FAILED"
+    | "COMMAND_BLOCKED"
+    | "USER_MESSAGE"
+    | "BOT_RESPONSE"
+    | "SESSION_START"
+    | "SESSION_END";
   userId?: string;
   username?: string;
   channelId?: string;
@@ -52,7 +58,12 @@ export class AuditLogger {
     });
   }
 
-  async logUserMessage(userId: string, username: string, channelId: string, message: string): Promise<void> {
+  async logUserMessage(
+    userId: string,
+    username: string,
+    channelId: string,
+    message: string
+  ): Promise<void> {
     await this.log({
       timestamp: new Date(),
       eventType: "USER_MESSAGE",
