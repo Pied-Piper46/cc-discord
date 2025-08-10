@@ -43,6 +43,7 @@
     "@david/dax": "jsr:@david/dax@^0.43.2",
     "@std/fs": "jsr:@std/fs@^1.0.19",
     "@std/path": "jsr:@std/path@^1.1.1",
-    "discord.js": "npm:discord.js@^14.21.0"
+    "discord.js": "npm:discord.js@^14.21.0",
+    "discord-cf": "npm:discord-cf@latest"
   }
 }

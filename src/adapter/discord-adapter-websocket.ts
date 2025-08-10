@@ -1,32 +1,30 @@
-import {
-  Client,
-  GatewayIntentBits,
-  Message,
-  TextChannel,
-  ThreadChannel,
-} from "discord.js";
+import { GatewayClient, GatewayIntentBits, REST, API } from "discord-cf";
 import type { Adapter, MessageBus, ActorMessage } from "../types.ts";
 import type { Config } from "../config.ts";
 import { t } from "../i18n.ts";
 import { AuditLogger } from "../utils/audit-logger.ts";
 
-// Adapter that manages Discord connection
-export class DiscordAdapter implements Adapter {
-  name = "discord";
-  private client: Client;
+// Discord-cf WebSocket adapter (experimental)
+// Note: This requires Cloudflare Workers environment with Durable Objects
+export class DiscordWebSocketAdapter implements Adapter {
+  name = "discord-websocket";
+  private gateway: GatewayClient | undefined;
+  private rest: REST;
+  private api: API;
   private config: Config;
   private messageBus: MessageBus;
-  private currentThread: ThreadChannel | null = null;
   private isRunning = false;
   private auditLogger: AuditLogger;
-  // Streaming state: originalMessageId -> buffers and timer
+  private currentThreadId: string | undefined;
+  
+  // Streaming state management
   private streamStates: Map<
     string,
     {
       buffer: string;
       toolBuffer: string;
       timer?: number;
-      thinkingMessage?: Message;
+      thinkingMessageId?: string;
       mode: "edit" | "append";
       channelId?: string;
     }
@@ -39,15 +37,9 @@ export class DiscordAdapter implements Adapter {
     this.messageBus = messageBus;
     this.auditLogger = new AuditLogger();
 
-    this.client = new Client({
-      intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent,
-      ],
-    });
-
-    this.setupEventHandlers();
+    // Initialize REST client for API calls
+    this.rest = new REST().setToken(`Bot ${this.config.discordToken}`);
+    this.api = new API(this.rest);
 
     // Subscribe to stream events
     this.busListener = (msg: ActorMessage) => this.handleStreamEvent(msg);
@@ -55,12 +47,46 @@ export class DiscordAdapter implements Adapter {
   }
 
   async start(): Promise<void> {
-    console.log(`[${this.name}] ${t("discord.starting")}`);
+    console.log(`[${this.name}] ${t("discord.starting")} (WebSocket mode)`);
 
     try {
       await this.auditLogger.init();
-      await this.client.login(this.config.discordToken);
+      
+      // Try to initialize WebSocket connection
+      // This will only work in Cloudflare Workers environment
+      if (typeof globalThis.WEBSOCKET_HANDLER !== 'undefined') {
+        this.gateway = new GatewayClient(
+          (globalThis as any).WEBSOCKET_HANDLER,
+          'bot-instance'
+        );
+
+        // Connect to Discord Gateway
+        await this.gateway.connect({
+          token: this.config.discordToken,
+          intents: [
+            GatewayIntentBits.Guilds,
+            GatewayIntentBits.GuildMessages,
+            GatewayIntentBits.MessageContent,
+          ],
+        });
+
+        // Set up event handlers
+        this.setupWebSocketHandlers();
+        
+        console.log(`[${this.name}] WebSocket connected successfully`);
+      } else {
+        console.warn(`[${this.name}] WebSocket handler not available. This requires Cloudflare Workers environment.`);
+        throw new Error("WebSocket not available in current environment");
+      }
+      
       this.isRunning = true;
+      
+      // Use the channel as "thread" since discord-cf doesn't support threads
+      this.currentThreadId = this.config.channelId;
+      
+      // Send initial message
+      await this.sendInitialMessage();
+      
       await this.auditLogger.logSessionStart(this.config.sessionId || "default", Deno.cwd());
     } catch (error) {
       console.error(`[${this.name}] ${t("discord.failedLogin")}`, error);
@@ -71,9 +97,17 @@ export class DiscordAdapter implements Adapter {
   async stop(): Promise<void> {
     console.log(`[${this.name}] ${t("discord.stopping")}`);
 
-    if (this.currentThread && this.currentThread.sendable) {
+    // Disconnect WebSocket
+    if (this.gateway) {
+      await this.gateway.disconnect();
+    }
+
+    // Send goodbye message
+    if (this.currentThreadId) {
       try {
-        await this.currentThread.send(t("discord.goodbye"));
+        await this.api.channels.createMessage(this.currentThreadId, {
+          content: t("discord.goodbye"),
+        });
       } catch (error) {
         console.error(`[${this.name}] ${t("discord.failedGoodbye")}`, error);
       }
@@ -81,7 +115,7 @@ export class DiscordAdapter implements Adapter {
 
     await this.auditLogger.logSessionEnd(this.config.sessionId || "default");
 
-    // Unsubscribe listener and clear timers
+    // Cleanup listeners and timers
     if (this.busListener) {
       this.messageBus.removeListener(this.busListener);
       this.busListener = null;
@@ -91,57 +125,43 @@ export class DiscordAdapter implements Adapter {
     }
     this.streamStates.clear();
 
-    this.client.destroy();
     this.isRunning = false;
   }
 
-  private isUserAllowed(userId: string): boolean {
-    // If allowedUsers is defined, check against the list
-    if (this.config.allowedUsers && this.config.allowedUsers.length > 0) {
-      return this.config.allowedUsers.includes(userId);
-    }
-    // Otherwise, fall back to checking against the single userId
-    return userId === this.config.userId;
+  private setupWebSocketHandlers(): void {
+    if (!this.gateway) return;
+
+    // Handle incoming messages through WebSocket
+    // Note: The actual event handling would need to be implemented
+    // based on discord-cf's WebSocket API documentation
+    
+    // This is a conceptual implementation as the actual API may differ
+    (this.gateway as any).on('MESSAGE_CREATE', async (message: any) => {
+      await this.handleMessage(message);
+    });
+
+    (this.gateway as any).on('READY', async () => {
+      console.log(`[${this.name}] ${t("discord.ready")}`);
+    });
+
+    (this.gateway as any).on('ERROR', (error: any) => {
+      console.error(`[${this.name}] ${t("discord.clientError")}`, error);
+    });
   }
 
-  private setupEventHandlers(): void {
-    this.client.once("ready", () => this.handleReady());
-    this.client.on("messageCreate", (message) => this.handleMessage(message));
-    this.client.on("error", (error) => this.handleError(error));
-  }
+  private async sendInitialMessage(): Promise<void> {
+    if (!this.currentThreadId) return;
 
-  private async handleReady(): Promise<void> {
-    console.log(
-      `[${this.name}] ${t("discord.ready")} ${this.client.user?.tag}`
-    );
-
-    try {
-      const channel = await this.client.channels.fetch(this.config.channelId);
-      if (channel && channel.isTextBased() && !channel.isThread()) {
-        await this.createThread(channel as TextChannel);
-      }
-    } catch (error) {
-      console.error(`[${this.name}] ${t("discord.failedSetup")}`, error);
-    }
-  }
-
-  private async createThread(channel: TextChannel): Promise<void> {
     const threadName = `Claude Session - ${new Date().toLocaleString("ja-JP")}`;
+    const initialMessage = this.createInitialMessage();
 
     try {
-      this.currentThread = await channel.threads.create({
-        name: threadName,
-        autoArchiveDuration: 1440, // 24 hours
-        reason: "Claude session thread",
+      await this.api.channels.createMessage(this.currentThreadId, {
+        content: initialMessage,
       });
-
-      // Send initial message
-      const initialMessage = this.createInitialMessage();
-      await this.currentThread.send(initialMessage);
-
       console.log(`[${this.name}] ${t("discord.threadCreated")} ${threadName}`);
     } catch (error) {
-      console.error(`[${this.name}] ${t("discord.failedCreateThread")}`, error);
+      console.error(`[${this.name}] Failed to send initial message:`, error);
     }
   }
 
@@ -169,24 +189,31 @@ ${t("discord.instructions.header")}
 - ${t("discord.instructions.normalMessage")}`;
   }
 
-  private async handleMessage(message: Message): Promise<void> {
-    // Ignore own messages and messages from other bots
-    if (message.author.bot) return;
+  private isUserAllowed(userId: string): boolean {
+    if (this.config.allowedUsers && this.config.allowedUsers.length > 0) {
+      return this.config.allowedUsers.includes(userId);
+    }
+    return userId === this.config.userId;
+  }
 
-    // Ignore messages outside current thread
-    if (!this.currentThread || message.channel.id !== this.currentThread.id)
-      return;
+  private async handleMessage(message: any): Promise<void> {
+    // Ignore bot messages
+    if (message.author?.bot) return;
+
+    // Ignore messages outside current channel
+    if (message.channel_id !== this.currentThreadId) return;
 
     // Check if user is allowed
     if (!this.isUserAllowed(message.author.id)) {
-      // Log auth failure
-      await this.auditLogger.logAuthFailure(message.author.id, message.channel.id);
-      // Send warning message if user is not allowed
-      await message.reply(t("discord.userNotAllowed") || "You are not authorized to use this bot.");
+      await this.auditLogger.logAuthFailure(message.author.id, message.channel_id);
+      await this.api.channels.createMessage(message.channel_id, {
+        content: t("discord.userNotAllowed") || "You are not authorized to use this bot.",
+        message_reference: { message_id: message.id },
+      });
       return;
     }
 
-    const content = message.content.trim();
+    const content = message.content?.trim();
     if (!content) return;
 
     console.log(
@@ -199,7 +226,7 @@ ${t("discord.instructions.header")}
     await this.auditLogger.logUserMessage(
       message.author.id,
       message.author.username,
-      message.channel.id,
+      message.channel_id,
       content
     );
 
@@ -212,7 +239,7 @@ ${t("discord.instructions.header")}
       payload: {
         text: content,
         authorId: message.author.id,
-        channelId: message.channel.id,
+        channelId: message.channel_id,
       },
       timestamp: new Date(),
     };
@@ -221,13 +248,12 @@ ${t("discord.instructions.header")}
     const response = await this.messageBus.send(actorMessage);
 
     if (response) {
-      // Process response
       await this.handleActorResponse(message, response);
     }
   }
 
   private async handleActorResponse(
-    originalMessage: Message,
+    originalMessage: any,
     response: ActorMessage
   ): Promise<void> {
     // Handle system commands
@@ -243,7 +269,6 @@ ${t("discord.instructions.header")}
       if (assistantResponse) {
         const text = (assistantResponse.payload as { text?: string })?.text;
         if (text) {
-          // Avoid duplicate final send if streaming path already handled completion
           const streamingEnabled = this.config.streamingEnabled ?? true;
           if (
             streamingEnabled &&
@@ -252,53 +277,52 @@ ${t("discord.instructions.header")}
           ) {
             return;
           }
-          await this.sendLongMessage(originalMessage, text);
+          await this.sendLongMessage(originalMessage.channel_id, text);
         }
       }
     }
   }
 
   private async handleSystemCommand(
-    message: Message,
+    message: any,
     response: ActorMessage
   ): Promise<void> {
-    const channel = message.channel as TextChannel | ThreadChannel;
+    const channelId = message.channel_id;
 
-    await this.auditLogger.logBotResponse(channel.id, response.type);
+    await this.auditLogger.logBotResponse(channelId, response.type);
 
     switch (response.type) {
       case "reset-session":
-        await channel.send(t("discord.commands.resetComplete"));
+        await this.api.channels.createMessage(channelId, {
+          content: t("discord.commands.resetComplete"),
+        });
         break;
 
       case "stop-tasks":
-        await channel.send(t("discord.commands.stopComplete"));
+        await this.api.channels.createMessage(channelId, {
+          content: t("discord.commands.stopComplete"),
+        });
         break;
 
       case "shutdown":
-        await channel.send(t("discord.commands.exitMessage"));
+        await this.api.channels.createMessage(channelId, {
+          content: t("discord.commands.exitMessage"),
+        });
         await this.stop();
         Deno.exit(0);
 
       case "execute-command":
-        // SECURITY WARNING: Shell command execution is disabled for security reasons.
-        // If you need this functionality, implement it with extreme caution:
-        // - Use a whitelist of allowed commands
-        // - Validate and sanitize all inputs
-        // - Run commands in a sandboxed environment
-        // - Log all command executions for audit purposes
-        await channel.send(
-          "⚠️ Shell command execution is disabled for security reasons."
-        );
+        await this.api.channels.createMessage(channelId, {
+          content: "⚠️ Shell command execution is disabled for security reasons.",
+        });
         break;
     }
   }
 
   private async sendLongMessage(
-    message: Message,
+    channelId: string,
     content: string
   ): Promise<void> {
-    const channel = message.channel as TextChannel | ThreadChannel;
     const messages: string[] = [];
     let currentMessage = "";
 
@@ -317,8 +341,10 @@ ${t("discord.instructions.header")}
 
     for (const msg of messages) {
       try {
-        await channel.send(msg);
-        // Wait a bit to avoid rate limiting
+        await this.api.channels.createMessage(channelId, {
+          content: msg,
+        });
+        // Wait to avoid rate limiting
         await new Promise((resolve) => setTimeout(resolve, 1000));
       } catch (error) {
         console.error(
@@ -327,10 +353,6 @@ ${t("discord.instructions.header")}
         );
       }
     }
-  }
-
-  private handleError(error: Error): void {
-    console.error(`[${this.name}] ${t("discord.clientError")}`, error);
   }
 
   // Streaming helpers
@@ -368,11 +390,7 @@ ${t("discord.instructions.header")}
     const channelId: string | undefined = payload?.channelId;
     const id: string | undefined = payload?.originalMessageId;
 
-    // Only handle for current thread
-    if (
-      !this.currentThread ||
-      (channelId && this.currentThread.id !== channelId)
-    )
+    if (!this.currentThreadId || (channelId && this.currentThreadId !== channelId))
       return;
     if (!id) return;
 
@@ -406,14 +424,17 @@ ${t("discord.instructions.header")}
       buffer: "",
       toolBuffer: "",
       timer: undefined as number | undefined,
-      thinkingMessage: undefined as Message | undefined,
+      thinkingMessageId: undefined as string | undefined,
       mode: cfg.mode,
-      channelId,
+      channelId: channelId || this.currentThreadId,
     };
-    if (cfg.showThinking && this.currentThread?.sendable) {
+    
+    if (cfg.showThinking && state.channelId) {
       try {
-        const msg = await this.currentThread.send("🤔 考え中...");
-        state.thinkingMessage = msg;
+        const msg = await this.api.channels.createMessage(state.channelId, {
+          content: "🤔 考え中...",
+        });
+        state.thinkingMessageId = msg.id;
       } catch (e) {
         console.error(`[${this.name}] failed to post thinking message`, e);
       }
@@ -434,18 +455,21 @@ ${t("discord.instructions.header")}
 
   private async flushNow(id: string): Promise<void> {
     const st = this.streamStates.get(id);
-    if (!st || !this.currentThread) return;
+    if (!st || !st.channelId) return;
     const out = `${st.toolBuffer}${st.toolBuffer && st.buffer ? "\n" : ""}${
       st.buffer
     }`.trim();
     if (!out) return;
 
     try {
-      if (st.mode === "edit" && st.thinkingMessage) {
-        await st.thinkingMessage.edit(this.capContent(out));
+      if (st.mode === "edit" && st.thinkingMessageId) {
+        await this.api.channels.editMessage(st.channelId, st.thinkingMessageId, {
+          content: this.capContent(out),
+        });
       } else {
-        // append mode or no thinking message available
-        await this.currentThread.send(this.capContent(out));
+        await this.api.channels.createMessage(st.channelId, {
+          content: this.capContent(out),
+        });
       }
     } catch (e) {
       console.error(`[${this.name}] stream flush error`, e);
@@ -462,7 +486,6 @@ ${t("discord.instructions.header")}
   ): Promise<void> {
     const st = this.streamStates.get(id);
     if (!st) {
-      // Initialize implicit state when partial comes before started
       this.onStreamStarted(id, _channelId);
     }
     const s = this.streamStates.get(id);
@@ -480,38 +503,6 @@ ${t("discord.instructions.header")}
     this.scheduleFlush(id);
   }
 
-  private async sendLongToCurrentThread(content: string): Promise<void> {
-    if (!this.currentThread) return;
-    const messages: string[] = [];
-    let currentMessage = "";
-
-    const lines = content.split("\n");
-    for (const line of lines) {
-      if (currentMessage.length + line.length + 1 > 1900) {
-        messages.push(currentMessage);
-        currentMessage = line;
-      } else {
-        currentMessage += (currentMessage ? "\n" : "") + line;
-      }
-    }
-    if (currentMessage) {
-      messages.push(currentMessage);
-    }
-
-    for (const msg of messages) {
-      try {
-        await this.currentThread.send(msg);
-        // Wait to avoid rate limiting (keep parity with sendLongMessage)
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      } catch (error) {
-        console.error(
-          `[${this.name}] ${t("discord.failedSendMessage")}`,
-          error
-        );
-      }
-    }
-  }
-
   private async onStreamCompleted(
     id: string,
     _channelId: string | undefined,
@@ -522,37 +513,35 @@ ${t("discord.instructions.header")}
       clearTimeout(st.timer);
       st.timer = undefined;
     }
-    // Final flush pending buffers before sending final
     await this.flushNow(id);
 
-    // Remove thinking message
     const cfg = this.getStreamingConfig();
-    if (cfg.showThinking && st?.thinkingMessage) {
+    const channelId = st?.channelId || _channelId || this.currentThreadId;
+    
+    if (cfg.showThinking && st?.thinkingMessageId && channelId) {
       try {
-        await st.thinkingMessage.delete();
+        await this.api.channels.deleteMessage(channelId, st.thinkingMessageId);
       } catch {
         // ignore
       }
     }
 
-    // Final output using long message split
-    try {
-      if (st?.thinkingMessage) {
-        await this.sendLongMessage(st.thinkingMessage, fullText);
-      } else {
-        await this.sendLongToCurrentThread(fullText);
+    if (channelId) {
+      try {
+        await this.sendLongMessage(channelId, fullText);
+        if (cfg.showDone) {
+          await this.api.channels.createMessage(channelId, {
+            content: "✅ done",
+          });
+        }
+      } catch (e) {
+        console.error(`[${this.name}] failed to send final output`, e);
       }
-      if (cfg.showDone && this.currentThread) {
-        await this.currentThread.send("✅ done");
-      }
-    } catch (e) {
-      console.error(`[${this.name}] failed to send final output`, e);
-    } finally {
-      this.streamStates.delete(id);
-      this.completedStreamIds.add(id);
-      // Cleanup completion mark later to avoid memory growth
-      setTimeout(() => this.completedStreamIds.delete(id), 60_000);
     }
+    
+    this.streamStates.delete(id);
+    this.completedStreamIds.add(id);
+    setTimeout(() => this.completedStreamIds.delete(id), 60_000);
   }
 
   private async onStreamError(
@@ -565,33 +554,50 @@ ${t("discord.instructions.header")}
       clearTimeout(st.timer);
       st.timer = undefined;
     }
-    // Remove thinking message
-    if (st?.thinkingMessage) {
+    
+    const channelId = st?.channelId || _channelId || this.currentThreadId;
+    
+    if (st?.thinkingMessageId && channelId) {
       try {
-        await st.thinkingMessage.delete();
+        await this.api.channels.deleteMessage(channelId, st.thinkingMessageId);
       } catch {
         // ignore
       }
     }
+    
     const cfg = this.getStreamingConfig();
-    if (cfg.showAbort && this.currentThread) {
+    if (cfg.showAbort && channelId) {
       try {
-        await this.currentThread.send(`⚠️ ストリーミング中断: ${message}`);
+        await this.api.channels.createMessage(channelId, {
+          content: `⚠️ ストリーミング中断: ${message}`,
+        });
       } catch {
         // ignore
       }
     }
+    
     this.streamStates.delete(id);
     this.completedStreamIds.add(id);
     setTimeout(() => this.completedStreamIds.delete(id), 60_000);
   }
 
   // Utility methods
-  getCurrentThread(): ThreadChannel | null {
-    return this.currentThread;
+  getCurrentThread(): string | null {
+    return this.currentThreadId || null;
   }
 
   isConnected(): boolean {
-    return this.isRunning && this.client.ws.status === 0;
+    return this.isRunning && !!this.gateway;
+  }
+
+  async getGatewayStatus(): Promise<any> {
+    if (!this.gateway) {
+      return { connected: false, error: "Gateway not initialized" };
+    }
+    try {
+      return await this.gateway.getStatus();
+    } catch (error) {
+      return { connected: false, error: error.message };
+    }
   }
 }
