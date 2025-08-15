@@ -394,6 +394,19 @@ ${
     if (message.to !== "discord") return;
 
     const type = message.type;
+    
+    // message-accepted イベントを処理
+    if (type === "message-accepted") {
+      void this.handleMessageAccepted(message);
+      return;
+    }
+    
+    // message-completed イベントを処理
+    if (type === "message-completed") {
+      void this.handleMessageCompleted(message);
+      return;
+    }
+    
     if (
       type !== "stream-started" &&
       type !== "stream-partial" &&
@@ -587,9 +600,7 @@ ${
           await this.sendLongToCurrentThread(fullText);
         }
       }
-      if (cfg.showDone && this.currentThread) {
-        await this.currentThread.send("✅ done");
-      }
+      // showDone の設定は削除（message-completedイベントで [done] を送信するため）
     } catch (e) {
       console.error(`[${this.name}] failed to send final output`, e);
     } finally {
@@ -629,6 +640,42 @@ ${
     this.streamStates.delete(id);
     this.completedStreamIds.add(id);
     setTimeout(() => this.completedStreamIds.delete(id), 60_000);
+  }
+
+  // Handle message accepted notification
+  private async handleMessageAccepted(message: ActorMessage): Promise<void> {
+    const payload = message.payload as any;
+    const channelId = payload?.channelId;
+    const text = payload?.text || "[accepted]";
+    
+    // Only handle for current thread
+    if (!this.currentThread || (channelId && this.currentThread.id !== channelId)) {
+      return;
+    }
+    
+    try {
+      await this.currentThread.send(text);
+    } catch (error) {
+      console.error(`[${this.name}] Failed to send acceptance message:`, error);
+    }
+  }
+
+  // Handle message completed notification
+  private async handleMessageCompleted(message: ActorMessage): Promise<void> {
+    const payload = message.payload as any;
+    const channelId = payload?.channelId;
+    const text = payload?.text || "[done]";
+    
+    // Only handle for current thread
+    if (!this.currentThread || (channelId && this.currentThread.id !== channelId)) {
+      return;
+    }
+    
+    try {
+      await this.currentThread.send(text);
+    } catch (error) {
+      console.error(`[${this.name}] Failed to send completion message:`, error);
+    }
   }
 
   // Utility methods

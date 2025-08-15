@@ -247,6 +247,15 @@ export class ClaudeCodeAdapter implements Adapter {
       const rawMsg = error instanceof Error ? error.message : String(error);
       // Rate limit detection (non-fatal hint only)
       const rateLimited = /429|rate[ -]?limit|too many requests/i.test(rawMsg);
+      
+      // Process exit code 1 詳細ログ
+      if (rawMsg.includes("exited with code 1")) {
+        console.error(`[${this.name}] Claude Code process exited with code 1`);
+        console.error(`[${this.name}] Full error: ${rawMsg}`);
+        console.error(`[${this.name}] Prompt length: ${actualPrompt.length} characters`);
+        console.error(`[${this.name}] Options:`, JSON.stringify(options, null, 2));
+      }
+      
       let cliPresence = "unknown";
       if (this.shouldRunPreflight(rawMsg) && !this.preflightChecked) {
         this.preflightChecked = true;
@@ -431,6 +440,15 @@ export class ClaudeCodeAdapter implements Adapter {
 
       const rawMsg = error instanceof Error ? error.message : String(error);
       const rateLimited = /429|rate[ -]?limit|too many requests/i.test(rawMsg);
+      
+      // Process exit code 1 詳細ログ (stream)
+      if (rawMsg.includes("exited with code 1")) {
+        console.error(`[${this.name}] Claude Code process exited with code 1 (stream)`);
+        console.error(`[${this.name}] Full error: ${rawMsg}`);
+        console.error(`[${this.name}] Prompt length: ${actualPrompt.length} characters`);
+        console.error(`[${this.name}] Options:`, JSON.stringify(options, null, 2));
+      }
+      
       let cliPresence = "unknown";
       if (this.shouldRunPreflight(rawMsg) && !this.preflightChecked) {
         this.preflightChecked = true;

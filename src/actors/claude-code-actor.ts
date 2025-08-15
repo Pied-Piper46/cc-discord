@@ -72,6 +72,26 @@ export class ClaudeCodeActor implements Actor {
       );
     }
 
+    // メッセージを受け付けたことを即座にDiscordに通知
+    if (this.bus && channelId) {
+      try {
+        await this.bus.emit({
+          id: crypto.randomUUID(),
+          from: this.name,
+          to: "discord",
+          type: "message-accepted",
+          payload: {
+            originalMessageId,
+            channelId,
+            text: "[accepted]",
+          },
+          timestamp: new Date(),
+        });
+      } catch (e) {
+        console.error(`[${this.name}] Failed to send acceptance notification:`, e);
+      }
+    }
+
     // ストリーミング有効判定（bus 未注入や無効時は従来どおり最終のみ）
     const streamingEnabled =
       (this as any).adapter &&
@@ -100,7 +120,7 @@ export class ClaudeCodeActor implements Actor {
 
     // ストリーミング経路
     try {
-      // stream-started
+      // stream-started (これで「考え中...」が表示されるがeditモードではあまり意味がない)
       await this.bus!.emit({
         id: crypto.randomUUID(),
         from: this.name,
@@ -114,28 +134,44 @@ export class ClaudeCodeActor implements Actor {
         timestamp: new Date(),
       });
 
-      const cfg: any = (this as any).adapter["config"] ?? {};
-      const toolPrefix: string =
-        cfg.streamingToolChunkPrefix ?? "📋 ツール実行結果:";
-      const maxChunk: number = cfg.streamingMaxChunkLength ?? 1800;
-
-      const truncate = (s: string, n: number) =>
-        s.length > n ? s.slice(0, n) + "..." : s;
+      const truncateLines = (text: string, maxLines: number = 50): string => {
+        const lines = text.split('\n');
+        if (lines.length <= maxLines) {
+          return text;
+        }
+        
+        const headLines = 25;
+        const tailLines = 10;
+        const omittedLines = lines.length - headLines - tailLines;
+        
+        return [
+          ...lines.slice(0, headLines),
+          `\n... ${omittedLines} lines omitted ...\n`,
+          ...lines.slice(-tailLines)
+        ].join('\n');
+      };
 
       const response = await this.adapter.query(text, async (cm) => {
         try {
-          // assistant のテキストチャンク
+          // assistant のテキストチャンクとツール使用
           if (cm?.type === "assistant") {
             const content = (cm as any).message?.content;
             let delta = "";
+            let toolUses: any[] = [];
+            
             if (typeof content === "string") {
               delta = content;
             } else if (Array.isArray(content)) {
               for (const b of content) {
-                if (b?.type === "text" && typeof b.text === "string")
+                if (b?.type === "text" && typeof b.text === "string") {
                   delta += b.text;
+                } else if (b?.type === "tool_use") {
+                  toolUses.push(b);
+                }
               }
             }
+            
+            // テキストデルタを送信
             if (delta) {
               await this.bus!.emit({
                 id: crypto.randomUUID(),
@@ -151,6 +187,32 @@ export class ClaudeCodeActor implements Actor {
                 timestamp: new Date(),
               });
             }
+            
+            // ツール使用を通知
+            for (const toolUse of toolUses) {
+              const toolInfo = `🔧 **ツール使用**: \`${toolUse.name || "unknown"}\`\n`;
+              let toolParams = "";
+              
+              if (toolUse.input) {
+                const paramsJson = JSON.stringify(toolUse.input, null, 2);
+                const truncatedParams = truncateLines(paramsJson, 50);
+                toolParams = `📋 **パラメータ**: \n\`\`\`json\n${truncatedParams}\n\`\`\`\n`;
+              }
+              
+              await this.bus!.emit({
+                id: crypto.randomUUID(),
+                from: this.name,
+                to: "discord",
+                type: "stream-partial",
+                payload: {
+                  originalMessageId,
+                  channelId: channelId ?? "",
+                  toolChunk: toolInfo + toolParams,
+                  raw: toolUse,
+                },
+                timestamp: new Date(),
+              });
+            }
           }
 
           // ツール結果チャンク（Claude 側は user/tool_result 経由）
@@ -159,14 +221,20 @@ export class ClaudeCodeActor implements Actor {
             if (Array.isArray(content)) {
               for (const item of content) {
                 if (item?.type === "tool_result") {
+                  const toolId = item.tool_use_id || "unknown";
+                  const isError = item.is_error || false;
                   const raw =
                     typeof item.content === "string"
                       ? item.content
                       : JSON.stringify(item.content);
-                  const chunk = `${toolPrefix}\n\`\`\`\n${truncate(
-                    raw ?? "",
-                    maxChunk
-                  )}\n\`\`\`\n`;
+                  
+                  const resultHeader = isError ? 
+                    `❌ **ツールエラー** (ID: ${toolId}):\n` :
+                    `✅ **ツール実行結果** (ID: ${toolId}):\n`;
+                  
+                  const truncatedResult = truncateLines(raw ?? "", 50);
+                  const chunk = `${resultHeader}\`\`\`\n${truncatedResult}\n\`\`\`\n`;
+                  
                   await this.bus!.emit({
                     id: crypto.randomUUID(),
                     from: this.name,
@@ -203,6 +271,26 @@ export class ClaudeCodeActor implements Actor {
         },
         timestamp: new Date(),
       });
+      
+      // 完了通知を送信
+      if (channelId) {
+        try {
+          await this.bus!.emit({
+            id: crypto.randomUUID(),
+            from: this.name,
+            to: "discord",
+            type: "message-completed",
+            payload: {
+              originalMessageId,
+              channelId,
+              text: "[done]",
+            },
+            timestamp: new Date(),
+          });
+        } catch (e) {
+          console.error(`[${this.name}] Failed to send completion notification:`, e);
+        }
+      }
 
       // 既存の最終応答も維持
       return this.createResponse(
