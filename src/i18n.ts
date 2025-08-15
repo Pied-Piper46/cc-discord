@@ -20,8 +20,6 @@ interface LocaleMessages {
     optionalConfig: string;
     sessionConfig: string;
     sessionExample: string;
-    debugConfig: string;
-    debugExample: string;
     neverSleepConfig: string;
     neverSleepExample: string;
     runCommand: string;
@@ -55,7 +53,6 @@ interface LocaleMessages {
         listSessions: string;
         select: string;
         neverSleep: string;
-        debug: string;
         help: string;
         locale: string;
       };
@@ -70,7 +67,6 @@ interface LocaleMessages {
         newSession: string;
         continueSession: string;
         resumeSession: string;
-        debugMode: string;
         neverSleepMode: string;
       };
     };
@@ -88,17 +84,9 @@ interface LocaleMessages {
   main: {
     startup: {
       title: string;
-      mode: string;
       neverSleep: string;
       resumeSession: string;
       newSession: string;
-    };
-    debug: {
-      running: string;
-      userResponse: string;
-      assistantResponse: string;
-      neverSleepDemo: string;
-      autoResponderResponse: string;
     };
     discord: {
       connected: string;
@@ -172,14 +160,12 @@ const messages: Record<Locale, LocaleMessages> = {
       inviteBot: "4. OAuth2 URL Generator で bot スコープと以下の権限を選択:",
       permissions: "   - Send Messages\n   - Create Public Threads\n   - Send Messages in Threads\n   - Read Message History",
       envFile: "5. .env ファイルを作成:",
-      envContent: `   DISCORD_BOT_TOKEN=your_bot_token_here
-   DISCORD_CLIENT_ID=your_client_id_here  
-   DISCORD_CHANNEL_ID=your_channel_id_here  # プライベートサーバーのチャンネルID`,
+      envContent: `   CC_DISCORD_TOKEN=your_bot_token_here
+   CC_DISCORD_USER_ID=your_user_id_here  
+   CC_DISCORD_CHANNEL_ID=your_channel_id_here  # プライベートサーバーのチャンネルID`,
       optionalConfig: "オプション設定",
       sessionConfig: "セッション管理:",
       sessionExample: "   SESSION_ID=unique_session_id  # 会話の継続用",
-      debugConfig: "デバッグモード:",
-      debugExample: "   DEBUG_MODE=true  # Claude APIを使用しないデバッグモード",
       neverSleepConfig: "Never Sleep モード:",
       neverSleepExample: "   NEVER_SLEEP=true  # 自動タスク実行モード",
       runCommand: "実行方法",
@@ -187,9 +173,9 @@ const messages: Record<Locale, LocaleMessages> = {
       moreInfo: "詳細は README.md を参照してください",
     },
     validation: {
-      discordTokenMissing: "DISCORD_BOT_TOKEN が設定されていません",
-      discordClientIdMissing: "DISCORD_CLIENT_ID が設定されていません", 
-      discordChannelIdMissing: "DISCORD_CHANNEL_ID が設定されていません",
+      discordTokenMissing: "CC_DISCORD_TOKEN が設定されていません",
+      discordClientIdMissing: "CC_DISCORD_USER_ID が設定されていません", 
+      discordChannelIdMissing: "CC_DISCORD_CHANNEL_ID が設定されていません",
     },
     config: {
       warnings: {
@@ -211,8 +197,6 @@ const messages: Record<Locale, LocaleMessages> = {
           listSessions: "再開可能なセッション一覧を表示",
           select: "セッションを対話的に選択",
           neverSleep: "Never Sleepモードを有効化（タスク自動実行）",
-          debug:
-            "デバッグモードを有効化（ClaudeCodeの代わりにDebugActorを使用）",
           help: "このヘルプメッセージを表示",
           locale: "言語を設定 (ja/en)",
         },
@@ -227,7 +211,6 @@ const messages: Record<Locale, LocaleMessages> = {
           newSession: "# 新しいセッションを開始",
           continueSession: "# 最後のセッションから続行",
           resumeSession: "# 特定のセッションを再開",
-          debugMode: "# デバッグモード（Claude APIを呼び出さない）",
           neverSleepMode: "# Never Sleepモード",
         },
       },
@@ -245,17 +228,9 @@ const messages: Record<Locale, LocaleMessages> = {
     main: {
       startup: {
         title: "CC Discord Bot 起動完了",
-        mode: "モード",
         neverSleep: "Never Sleep",
         resumeSession: "セッション再開",
         newSession: "新規セッション",
-      },
-      debug: {
-        running: "デバッグモード: デモ会話を実行中...",
-        userResponse: "UserActor レスポンス:",
-        assistantResponse: "アシスタント レスポンス:",
-        neverSleepDemo: "Never Sleepモード デモ...",
-        autoResponderResponse: "AutoResponder レスポンス:",
       },
       discord: {
         connected: "Discordに接続しました。",
@@ -324,14 +299,12 @@ const messages: Record<Locale, LocaleMessages> = {
       inviteBot: "4. Select bot scope and following permissions in OAuth2 URL Generator:",
       permissions: "   - Send Messages\n   - Create Public Threads\n   - Send Messages in Threads\n   - Read Message History",
       envFile: "5. Create .env file:",
-      envContent: `   DISCORD_BOT_TOKEN=your_bot_token_here
-   DISCORD_CLIENT_ID=your_client_id_here
-   DISCORD_CHANNEL_ID=your_channel_id_here  # Your private server's channel ID`,
+      envContent: `   CC_DISCORD_TOKEN=your_bot_token_here
+   CC_DISCORD_USER_ID=your_user_id_here
+   CC_DISCORD_CHANNEL_ID=your_channel_id_here  # Your private server's channel ID`,
       optionalConfig: "Optional Configuration",
       sessionConfig: "Session Management:",
       sessionExample: "   SESSION_ID=unique_session_id  # For conversation continuity",
-      debugConfig: "Debug Mode:",
-      debugExample: "   DEBUG_MODE=true  # Debug mode without Claude API",
       neverSleepConfig: "Never Sleep Mode:",
       neverSleepExample: "   NEVER_SLEEP=true  # Automatic task execution mode",
       runCommand: "How to Run",
@@ -339,9 +312,9 @@ const messages: Record<Locale, LocaleMessages> = {
       moreInfo: "See README.md for more details",
     },
     validation: {
-      discordTokenMissing: "DISCORD_BOT_TOKEN is not set",
-      discordClientIdMissing: "DISCORD_CLIENT_ID is not set",
-      discordChannelIdMissing: "DISCORD_CHANNEL_ID is not set",
+      discordTokenMissing: "CC_DISCORD_TOKEN is not set",
+      discordClientIdMissing: "CC_DISCORD_USER_ID is not set",
+      discordChannelIdMissing: "CC_DISCORD_CHANNEL_ID is not set",
     },
     config: {
       warnings: {
@@ -363,7 +336,6 @@ const messages: Record<Locale, LocaleMessages> = {
           listSessions: "List all resumable sessions",
           select: "Select a session interactively",
           neverSleep: "Enable Never Sleep mode (auto-execute tasks)",
-          debug: "Enable debug mode (use DebugActor instead of ClaudeCode)",
           help: "Show this help message",
           locale: "Set language (ja/en)",
         },
@@ -378,7 +350,6 @@ const messages: Record<Locale, LocaleMessages> = {
           newSession: "# Start a new session",
           continueSession: "# Continue from the last session",
           resumeSession: "# Resume a specific session",
-          debugMode: "# Debug mode (no Claude API calls)",
           neverSleepMode: "# Never Sleep mode",
         },
       },
@@ -398,17 +369,9 @@ const messages: Record<Locale, LocaleMessages> = {
     main: {
       startup: {
         title: "CC Discord Bot Started",
-        mode: "Mode",
         neverSleep: "Never Sleep",
         resumeSession: "Resume Session",
         newSession: "New Session",
-      },
-      debug: {
-        running: "Debug mode: Running demo conversation...",
-        userResponse: "UserActor response:",
-        assistantResponse: "Assistant response:",
-        neverSleepDemo: "Never Sleep mode demo...",
-        autoResponderResponse: "AutoResponder response:",
       },
       discord: {
         connected: "Connected to Discord.",
@@ -530,7 +493,7 @@ export function showSetupInstructions(missingVars: string[]) {
   console.log("\n" + "=".repeat(50) + "\n");
   
   // Discord setup if needed
-  if (missingVars.some(v => v.startsWith("DISCORD_"))) {
+  if (missingVars.some(v => v.startsWith("CC_DISCORD"))) {
     console.log(`${t("setup.discordSetup")}\n`);
     console.log(`⚠️  ${t("setup.createPrivateServer")}\n`);
     console.log(t("setup.createBot"));
@@ -548,9 +511,6 @@ export function showSetupInstructions(missingVars: string[]) {
   console.log(`${t("setup.optionalConfig")}\n`);
   console.log(t("setup.sessionConfig"));
   console.log(t("setup.sessionExample"));
-  console.log();
-  console.log(t("setup.debugConfig"));
-  console.log(t("setup.debugExample"));
   console.log();
   console.log(t("setup.neverSleepConfig"));
   console.log(t("setup.neverSleepExample"));

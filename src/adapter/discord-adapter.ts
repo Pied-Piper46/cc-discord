@@ -8,7 +8,7 @@ import {
 import type { Adapter, MessageBus, ActorMessage } from "../types.ts";
 import type { Config } from "../config.ts";
 import { t } from "../i18n.ts";
-import { AuditLogger } from "../utils/audit-logger.ts";
+import { AuditLogger } from "../audit-logger.ts";
 import { sessionHistory } from "../utils/session-history.ts";
 
 // Adapter that manages Discord connection
@@ -38,7 +38,7 @@ export class DiscordAdapter implements Adapter {
   constructor(config: Config, messageBus: MessageBus) {
     this.config = config;
     this.messageBus = messageBus;
-    this.auditLogger = new AuditLogger();
+    this.auditLogger = new AuditLogger(config.auditLogPath);
 
     this.client = new Client({
       intents: [
@@ -62,7 +62,13 @@ export class DiscordAdapter implements Adapter {
       await this.auditLogger.init();
       await this.client.login(this.config.discordToken);
       this.isRunning = true;
-      await this.auditLogger.logSessionStart(this.config.sessionId || "default", Deno.cwd());
+      
+      if (this.config.auditLogPath) {
+        await this.auditLogger.logInfo("discord-adapter", "session_start", {
+          sessionId: this.config.sessionId || "default",
+          workDir: Deno.cwd(),
+        });
+      }
     } catch (error) {
       console.error(`[${this.name}] ${t("discord.failedLogin")}`, error);
       throw error;
@@ -80,7 +86,12 @@ export class DiscordAdapter implements Adapter {
       }
     }
 
-    await this.auditLogger.logSessionEnd(this.config.sessionId || "default");
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-adapter", "session_end", {
+        sessionId: this.config.sessionId || "default",
+      });
+    }
+    await this.auditLogger.close();
 
     // Unsubscribe listener and clear timers
     if (this.busListener) {
@@ -176,9 +187,6 @@ export class DiscordAdapter implements Adapter {
 
 **${t("discord.sessionInfo.startTime")}**: ${new Date().toISOString()}
 **${t("discord.sessionInfo.workDir")}**: \`${Deno.cwd()}\`
-**${t("discord.sessionInfo.mode")}**: ${
-      this.config.debugMode ? "Debug" : "Production"
-    }
 ${
   this.config.neverSleep
     ? `**${t("discord.sessionInfo.neverSleepEnabled")}**`
@@ -221,7 +229,13 @@ ${
     // Check if user is allowed
     if (!this.isUserAllowed(message.author.id)) {
       // Log auth failure
-      await this.auditLogger.logAuthFailure(message.author.id, message.channel.id);
+      if (this.config.auditLogPath) {
+        await this.auditLogger.logWarn("discord-adapter", "auth_failed", {
+          userId: message.author.id,
+          channelId: message.channel.id,
+          reason: "User not in allowed list",
+        });
+      }
       // Send warning message if user is not allowed
       await message.reply(t("discord.userNotAllowed") || "You are not authorized to use this bot.");
       return;
@@ -237,12 +251,15 @@ ${
     );
 
     // Log user message
-    await this.auditLogger.logUserMessage(
-      message.author.id,
-      message.author.username,
-      message.channel.id,
-      content
-    );
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-adapter", "user_message", {
+        userId: message.author.id,
+        username: message.author.username,
+        channelId: message.channel.id,
+        message: content.substring(0, 200),
+        messageLength: content.length,
+      });
+    }
 
     // Convert Discord message to ActorMessage
     const actorMessage: ActorMessage = {
@@ -305,7 +322,12 @@ ${
   ): Promise<void> {
     const channel = message.channel as TextChannel | ThreadChannel;
 
-    await this.auditLogger.logBotResponse(channel.id, response.type);
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-adapter", "bot_response", {
+        channelId: channel.id,
+        responseType: response.type,
+      });
+    }
 
     switch (response.type) {
       case "reset-session":

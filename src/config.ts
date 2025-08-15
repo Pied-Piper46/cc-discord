@@ -6,13 +6,13 @@ export interface Config {
   channelId: string;
   userId: string;
   allowedUsers?: string[]; // List of allowed user IDs
-  debugMode: boolean;
   neverSleep: boolean;
   sessionId?: string;
   continueSession?: boolean; // Continue existing session
   maxTurns: number;
   model: string;
   claudePermissionMode?: "bypassPermissions" | "ask";
+  auditLogPath?: string; // Path to audit log file
   // Streaming options (defaults applied in loadConfig)
   streamingEnabled?: boolean;
   streamingUpdateMode?: "edit" | "append";
@@ -31,48 +31,38 @@ export interface Config {
 }
 
 export interface EnvConfig {
-  // Discord
-  DISCORD_BOT_TOKEN?: string;
-  DISCORD_CLIENT_ID?: string;
-  DISCORD_CHANNEL_ID?: string;
-  DISCORD_ALLOWED_USERS?: string; // Comma-separated list of user IDs
-  // Anthropic
-  ANTHROPIC_API_KEY?: string;
-  // Claude Code permission mode
-  CLAUDE_PERMISSION_MODE?: string;
-  // Gemini configuration
-  GEMINI_API_KEY?: string;
-  GEMINI_MODEL?: string;
-  GEMINI_MAX_TOKENS?: string;
-  GEMINI_TEMPERATURE?: string;
-  USE_GEMINI?: string;
-  // Legacy support
+  // Discord (CC_ prefix only)
   CC_DISCORD_TOKEN?: string;
   CC_DISCORD_CHANNEL_ID?: string;
   CC_DISCORD_USER_ID?: string;
-  CC_CLAUDE_API_KEY?: string;
+  CC_DISCORD_ALLOWED_USERS?: string; // Comma-separated list of user IDs
+  // Anthropic
   CC_ANTHROPIC_API_KEY?: string;
+  CC_CLAUDE_API_KEY?: string;
+  // Gemini configuration
+  CC_GEMINI_API_KEY?: string;
+  CC_GEMINI_MODEL?: string;
+  CC_GEMINI_MAX_TOKENS?: string;
+  CC_GEMINI_TEMPERATURE?: string;
+  CC_USE_GEMINI?: string;
 }
 
 // Load configuration from environment variables
-export function loadConfig(debugMode = false): Config | null {
+export function loadConfig(): Config | null {
   const env = Deno.env.toObject() as EnvConfig;
 
-  // Support both new and legacy environment variable names
-  const discordToken = env.DISCORD_BOT_TOKEN || env.CC_DISCORD_TOKEN;
-  const channelId = env.DISCORD_CHANNEL_ID || env.CC_DISCORD_CHANNEL_ID;
-  const clientId = env.DISCORD_CLIENT_ID;
-  const userId = env.CC_DISCORD_USER_ID || clientId;
-  const claudeApiKey =
-    env.ANTHROPIC_API_KEY || env.CC_CLAUDE_API_KEY || env.CC_ANTHROPIC_API_KEY;
+  // Use only CC_ prefixed environment variables
+  const discordToken = env.CC_DISCORD_TOKEN;
+  const channelId = env.CC_DISCORD_CHANNEL_ID;
+  const userId = env.CC_DISCORD_USER_ID;
+  const claudeApiKey = env.CC_CLAUDE_API_KEY || env.CC_ANTHROPIC_API_KEY;
 
   // Check which variables are missing
   const missingVars: string[] = [];
 
-  if (!discordToken) missingVars.push("DISCORD_BOT_TOKEN");
-  if (!clientId && !env.CC_DISCORD_USER_ID)
-    missingVars.push("DISCORD_CLIENT_ID");
-  if (!channelId) missingVars.push("DISCORD_CHANNEL_ID");
+  if (!discordToken) missingVars.push("CC_DISCORD_TOKEN");
+  if (!userId) missingVars.push("CC_DISCORD_USER_ID");
+  if (!channelId) missingVars.push("CC_DISCORD_CHANNEL_ID");
 
   // Show setup instructions if any required variables are missing
   if (missingVars.length > 0) {
@@ -81,7 +71,7 @@ export function loadConfig(debugMode = false): Config | null {
   }
 
   // Warn if ANTHROPIC_API_KEY is set (Claude Code uses internal auth)
-  if (claudeApiKey && !debugMode) {
+  if (claudeApiKey) {
     console.log("\n" + "⚠️ ".repeat(25));
     console.log(t("config.warnings.apiKeyNotNeeded"));
     console.log(t("config.warnings.apiKeyBillingRisk"));
@@ -89,36 +79,23 @@ export function loadConfig(debugMode = false): Config | null {
     console.log("⚠️ ".repeat(25) + "\n");
   }
 
-  // Parse permission mode from env
-  let claudePermissionMode: "bypassPermissions" | "ask" | undefined;
-  const rawMode = env.CLAUDE_PERMISSION_MODE?.trim();
-  if (rawMode) {
-    if (rawMode === "default") {
-      // keep undefined to use existing default behavior (backward compatible)
-    } else if (rawMode === "ask" || rawMode === "bypassPermissions") {
-      claudePermissionMode = rawMode;
-    } else {
-      console.warn(
-        `[config] Invalid CLAUDE_PERMISSION_MODE="${rawMode}" - falling back to default`
-      );
-    }
-  }
+  // Permission mode is now only set via CLI options
 
   // Parse allowed users from env
   let allowedUsers: string[] | undefined;
-  if (env.DISCORD_ALLOWED_USERS) {
-    allowedUsers = env.DISCORD_ALLOWED_USERS.split(",").map(id => id.trim()).filter(id => id.length > 0);
+  if (env.CC_DISCORD_ALLOWED_USERS) {
+    allowedUsers = env.CC_DISCORD_ALLOWED_USERS.split(",").map(id => id.trim()).filter(id => id.length > 0);
     if (allowedUsers.length === 0) {
       allowedUsers = undefined;
     }
   }
 
   // Parse Gemini configuration
-  const useGemini = env.USE_GEMINI === "true" || env.USE_GEMINI === "1";
-  const geminiApiKey = env.GEMINI_API_KEY;
-  const geminiModel = env.GEMINI_MODEL || "gemini-pro";
-  const geminiMaxTokens = env.GEMINI_MAX_TOKENS ? parseInt(env.GEMINI_MAX_TOKENS) : undefined;
-  const geminiTemperature = env.GEMINI_TEMPERATURE ? parseFloat(env.GEMINI_TEMPERATURE) : undefined;
+  const useGemini = env.CC_USE_GEMINI === "true" || env.CC_USE_GEMINI === "1";
+  const geminiApiKey = env.CC_GEMINI_API_KEY;
+  const geminiModel = env.CC_GEMINI_MODEL || "gemini-pro";
+  const geminiMaxTokens = env.CC_GEMINI_MAX_TOKENS ? parseInt(env.CC_GEMINI_MAX_TOKENS) : undefined;
+  const geminiTemperature = env.CC_GEMINI_TEMPERATURE ? parseFloat(env.CC_GEMINI_TEMPERATURE) : undefined;
 
   // Warn if Gemini is enabled but API key is missing
   if (useGemini && !geminiApiKey) {
@@ -131,11 +108,9 @@ export function loadConfig(debugMode = false): Config | null {
     channelId: channelId!,
     userId: userId!,
     allowedUsers,
-    debugMode,
     neverSleep: false, // Set from CLI options
     maxTurns: 300,
     model: "claude-opus-4-20250514",
-    claudePermissionMode,
     // Streaming defaults
     streamingEnabled: true,
     streamingUpdateMode: "append",  // Changed from "edit" to "append" - each update creates a new message

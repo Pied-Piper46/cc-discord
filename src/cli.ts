@@ -11,9 +11,10 @@ export interface CliOptions {
   listSessions: boolean;
   select: boolean;
   neverSleep: boolean;
-  debug: boolean;
   help: boolean;
   locale?: string;
+  permissionMode?: string;
+  logs?: string;
 }
 
 // Parse CLI options
@@ -43,11 +44,6 @@ export function parseCliOptions(): CliOptions {
         type: "boolean",
         default: false,
       },
-      debug: {
-        type: "boolean",
-        short: "d",
-        default: false,
-      },
       help: {
         type: "boolean",
         short: "h",
@@ -56,6 +52,13 @@ export function parseCliOptions(): CliOptions {
       locale: {
         type: "string",
         short: "l",
+      },
+      "permission-mode": {
+        type: "string",
+        short: "p",
+      },
+      logs: {
+        type: "string",
       },
     },
   });
@@ -66,9 +69,10 @@ export function parseCliOptions(): CliOptions {
     listSessions: values["list-sessions"] as boolean,
     select: values.select as boolean,
     neverSleep: values["never-sleep"] as boolean,
-    debug: values.debug as boolean,
     help: values.help as boolean,
     locale: values.locale as string | undefined,
+    permissionMode: values["permission-mode"] as string | undefined,
+    logs: values.logs as string | undefined,
   };
 }
 
@@ -85,9 +89,10 @@ Options:
   --list-sessions       ${t("cli.help.options.listSessions")}
   -s, --select          ${t("cli.help.options.select")}
   --never-sleep         ${t("cli.help.options.neverSleep")}
-  -d, --debug           ${t("cli.help.options.debug")}
   -h, --help            ${t("cli.help.options.help")}
   -l, --locale <lang>   ${t("cli.help.options.locale")}
+  -p, --permission-mode <mode> Set Claude permission mode (ask/auto/bypassPermissions)
+  --logs <path>         Enable audit logging to specified file
 
 ${t("cli.help.envVars.title")}
   CC_DISCORD_TOKEN      ${t("cli.help.envVars.token")}
@@ -104,8 +109,6 @@ ${t("cli.help.examples.title")}
   ${t("cli.help.examples.resumeSession")}
   deno run -A --env ccdiscord.ts -r session-id
 
-  ${t("cli.help.examples.debugMode")}
-  deno run -A --env ccdiscord.ts -d
 
   ${t("cli.help.examples.neverSleepMode")}
   deno run -A --env ccdiscord.ts --never-sleep
@@ -119,6 +122,19 @@ export function validateOptions(options: CliOptions): void {
     const validLocales: Locale[] = ["ja", "en"];
     if (validLocales.includes(options.locale as Locale)) {
       i18n.setLocale(options.locale as Locale);
+    }
+  }
+  
+  // Validate permission mode if specified
+  if (options.permissionMode) {
+    const validModes = ["ask", "auto", "bypassPermissions"];
+    if (!validModes.includes(options.permissionMode)) {
+      console.error(`Invalid permission mode: ${options.permissionMode}. Valid modes are: ${validModes.join(", ")}`);
+      Deno.exit(1);
+    }
+    // Convert "auto" to undefined to use Claude Code's default
+    if (options.permissionMode === "auto") {
+      options.permissionMode = undefined;
     }
   }
   

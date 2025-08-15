@@ -13,10 +13,9 @@ import { SimpleMessageBus } from "./message-bus.ts";
 import { UserActor } from "./actors/user-actor.ts";
 import { ClaudeCodeActor } from "./actors/claude-code-actor.ts";
 import { GeminiCliActor } from "./actors/gemini-cli-actor.ts";
-import { DebugActor } from "./actors/debug-actor.ts";
 import { AutoResponderActor } from "./actors/auto-responder-actor.ts";
 import { DiscordAdapter } from "./adapter/discord-adapter.ts";
-import type { ActorMessage } from "./types.ts";
+import { AuditLogger } from "./audit-logger.ts";
 
 async function main() {
   // Parse CLI options
@@ -48,19 +47,38 @@ async function main() {
   }
 
   // Load configuration
-  const config = loadConfig(options.debug);
+  const config = loadConfig();
   if (!config) {
     Deno.exit(1);
   }
 
   // Apply CLI options to configuration
-  config.debugMode = options.debug;
   config.neverSleep = options.neverSleep;
   if (options.resume) {
     config.sessionId = options.resume;
   }
   if (options.continue) {
     config.continueSession = true;
+  }
+  if (options.permissionMode) {
+    config.claudePermissionMode = options.permissionMode as
+      | "ask"
+      | "bypassPermissions";
+  }
+  if (options.logs) {
+    config.auditLogPath = options.logs;
+  }
+
+  // Initialize audit logger if enabled
+  const auditLogger = new AuditLogger(config.auditLogPath);
+  await auditLogger.init();
+
+  if (config.auditLogPath) {
+    await auditLogger.logInfo("system", "startup", {
+      neverSleep: config.neverSleep,
+      sessionId: config.sessionId,
+      continueSession: config.continueSession,
+    });
   }
 
   // Initialize message bus and Actors
@@ -72,21 +90,14 @@ async function main() {
 
   // Select assistant Actor based on configuration
   let assistantActor;
-  if (config.debugMode) {
-    assistantActor = new DebugActor("assistant");
-  } else if (config.useGemini) {
+  if (config.useGemini) {
     assistantActor = new GeminiCliActor(config, "assistant");
   } else {
     assistantActor = new ClaudeCodeActor(config, "assistant");
   }
 
-  // Streaming用に MessageBus を注入（後方互換: DebugActor へは未注入）
-  if (
-    assistantActor instanceof ClaudeCodeActor ||
-    assistantActor instanceof GeminiCliActor
-  ) {
-    assistantActor.setMessageBus(bus);
-  }
+  // Streaming用に MessageBus を注入
+  assistantActor.setMessageBus(bus);
 
   // Register Actors
   bus.register(userActor);
@@ -99,7 +110,6 @@ async function main() {
   console.log(`
 ===========================================
 ${t("main.startup.title")}
-${t("main.startup.mode")}: ${config.debugMode ? "Debug" : "Production"}
 ${t("main.startup.neverSleep")}: ${config.neverSleep ? "Enabled" : "Disabled"}
 ${
   config.sessionId
@@ -109,85 +119,44 @@ ${
 ===========================================
 `);
 
-  // Demo: Simulate a simple conversation
-  if (config.debugMode) {
-    console.log(`${t("main.debug.running")}\n`);
 
-    // Message from user
-    const userMessage: ActorMessage = {
-      id: crypto.randomUUID(),
-      from: "discord",
-      to: "user",
-      type: "discord-message",
-      payload: { text: "Hello! Please tell me today's tasks." },
-      timestamp: new Date(),
-    };
+  // Discord connection
+  const discordAdapter = new DiscordAdapter(config, bus);
 
-    const userResponse = await bus.send(userMessage);
-    if (userResponse) {
-      console.log(`${t("main.debug.userResponse")}`, userResponse);
+  try {
+    await discordAdapter.start();
+    console.log(`\n${t("main.discord.connected")}`);
 
-      // UserActor forwards to assistant
-      const assistantResponse = await bus.send(userResponse);
-      if (assistantResponse) {
-        console.log(`${t("main.debug.assistantResponse")}`, assistantResponse);
-      }
-    }
-
-    // Never Sleep mode demo
-    if (config.neverSleep) {
-      console.log(`\n${t("main.debug.neverSleepDemo")}`);
-
-      const idleCheck: ActorMessage = {
-        id: crypto.randomUUID(),
-        from: "timer",
-        to: "auto-responder",
-        type: "idle-check",
-        payload: {
-          lastActivityTime: new Date(Date.now() - 6 * 60 * 1000),
-          timeout: 5 * 60 * 1000,
-        },
-        timestamp: new Date(),
-      };
-
-      const idleResponse = await bus.send(idleCheck);
-      if (idleResponse) {
-        console.log(`${t("main.debug.autoResponderResponse")}`, idleResponse);
-      }
-    }
-  }
-
-  // Discord connection (when not in debug mode)
-  if (!config.debugMode) {
-    const discordAdapter = new DiscordAdapter(config, bus);
-
-    try {
-      await discordAdapter.start();
-      console.log(`\n${t("main.discord.connected")}`);
-
-      // Handle process termination
-      Deno.addSignalListener("SIGINT", async () => {
-        console.log(`\n${t("main.discord.shutdown")}`);
-        await discordAdapter.stop();
-        await bus.stopAll();
-        Deno.exit(0);
-      });
-
-      // Maintain connection
-      await new Promise(() => {});
-    } catch (error) {
-      console.error(`${t("main.discord.connectionError")}`, error);
+    // Handle process termination
+    Deno.addSignalListener("SIGINT", async () => {
+      console.log(`\n${t("main.discord.shutdown")}`);
+      await auditLogger.logInfo("system", "shutdown", { reason: "SIGINT" });
+      await discordAdapter.stop();
       await bus.stopAll();
-      Deno.exit(1);
-    }
-  } else {
-    // Debug mode completion
+      await auditLogger.close();
+      Deno.exit(0);
+    });
+
+    // Maintain connection
+    await new Promise(() => {});
+  } catch (error) {
+    console.error(`${t("main.discord.connectionError")}`, error);
+    await auditLogger.logError(
+      "system",
+      "discord_connection_failed",
+      (error as Error).toString()
+    );
     await bus.stopAll();
+    await auditLogger.close();
+    Deno.exit(1);
   }
 }
 
 // Error handling
-main().catch((error) => {
+main().catch(async (error) => {
   console.error(`${t("main.fatalError")}`, error);
+  const auditLogger = new AuditLogger();
+  await auditLogger.logError("system", "fatal_error", String(error));
+  await auditLogger.close();
   Deno.exit(1);
 });

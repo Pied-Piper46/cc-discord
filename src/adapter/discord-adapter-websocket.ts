@@ -2,7 +2,7 @@ import { GatewayClient, GatewayIntentBits, REST, API } from "discord-cf";
 import type { Adapter, MessageBus, ActorMessage } from "../types.ts";
 import type { Config } from "../config.ts";
 import { t } from "../i18n.ts";
-import { AuditLogger } from "../utils/audit-logger.ts";
+import { AuditLogger } from "../audit-logger.ts";
 
 // Discord-cf WebSocket adapter (experimental)
 // Note: This requires Cloudflare Workers environment with Durable Objects
@@ -35,7 +35,7 @@ export class DiscordWebSocketAdapter implements Adapter {
   constructor(config: Config, messageBus: MessageBus) {
     this.config = config;
     this.messageBus = messageBus;
-    this.auditLogger = new AuditLogger();
+    this.auditLogger = new AuditLogger(config.auditLogPath);
 
     // Initialize REST client for API calls
     this.rest = new REST().setToken(`Bot ${this.config.discordToken}`);
@@ -87,7 +87,12 @@ export class DiscordWebSocketAdapter implements Adapter {
       // Send initial message
       await this.sendInitialMessage();
       
-      await this.auditLogger.logSessionStart(this.config.sessionId || "default", Deno.cwd());
+      if (this.config.auditLogPath) {
+        await this.auditLogger.logInfo("discord-websocket", "session_start", {
+          sessionId: this.config.sessionId || "default",
+          workDir: Deno.cwd(),
+        });
+      }
     } catch (error) {
       console.error(`[${this.name}] ${t("discord.failedLogin")}`, error);
       throw error;
@@ -113,7 +118,12 @@ export class DiscordWebSocketAdapter implements Adapter {
       }
     }
 
-    await this.auditLogger.logSessionEnd(this.config.sessionId || "default");
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-websocket", "session_end", {
+        sessionId: this.config.sessionId || "default",
+      });
+    }
+    await this.auditLogger.close();
 
     // Cleanup listeners and timers
     if (this.busListener) {
@@ -170,9 +180,6 @@ export class DiscordWebSocketAdapter implements Adapter {
 
 **${t("discord.sessionInfo.startTime")}**: ${new Date().toISOString()}
 **${t("discord.sessionInfo.workDir")}**: \`${Deno.cwd()}\`
-**${t("discord.sessionInfo.mode")}**: ${
-      this.config.debugMode ? "Debug" : "Production"
-    }
 ${
   this.config.neverSleep
     ? `**${t("discord.sessionInfo.neverSleepEnabled")}**`
@@ -205,7 +212,13 @@ ${t("discord.instructions.header")}
 
     // Check if user is allowed
     if (!this.isUserAllowed(message.author.id)) {
-      await this.auditLogger.logAuthFailure(message.author.id, message.channel_id);
+      if (this.config.auditLogPath) {
+        await this.auditLogger.logWarn("discord-websocket", "auth_failed", {
+          userId: message.author.id,
+          channelId: message.channel_id,
+          reason: "User not in allowed list",
+        });
+      }
       await this.api.channels.createMessage(message.channel_id, {
         content: t("discord.userNotAllowed") || "You are not authorized to use this bot.",
         message_reference: { message_id: message.id },
@@ -223,12 +236,15 @@ ${t("discord.instructions.header")}
     );
 
     // Log user message
-    await this.auditLogger.logUserMessage(
-      message.author.id,
-      message.author.username,
-      message.channel_id,
-      content
-    );
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-websocket", "user_message", {
+        userId: message.author.id,
+        username: message.author.username,
+        channelId: message.channel_id,
+        message: content.substring(0, 200),
+        messageLength: content.length,
+      });
+    }
 
     // Convert Discord message to ActorMessage
     const actorMessage: ActorMessage = {
@@ -289,7 +305,12 @@ ${t("discord.instructions.header")}
   ): Promise<void> {
     const channelId = message.channel_id;
 
-    await this.auditLogger.logBotResponse(channelId, response.type);
+    if (this.config.auditLogPath) {
+      await this.auditLogger.logInfo("discord-websocket", "bot_response", {
+        channelId: channelId,
+        responseType: response.type,
+      });
+    }
 
     switch (response.type) {
       case "reset-session":

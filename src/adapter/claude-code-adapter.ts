@@ -104,8 +104,7 @@ export class ClaudeCodeAdapter implements Adapter {
     const options: Options = {
       maxTurns: this.config.maxTurns,
       model: this.config.model,
-      permissionMode: (this.config.claudePermissionMode ??
-        "bypassPermissions") as Options["permissionMode"],
+      permissionMode: this.config.claudePermissionMode as Options["permissionMode"] | undefined,
       ...((this.isFirstQuery && !this.config.continueSession) ? {} : { continue: true }),
       ...(this.config.sessionId && this.isFirstQuery
         ? { resume: this.config.sessionId }
@@ -229,7 +228,7 @@ export class ClaudeCodeAdapter implements Adapter {
 
       // Collect diagnostics (non-fatal, best-effort)
       const permissionMode =
-        this.config.claudePermissionMode ?? "bypassPermissions";
+        this.config.claudePermissionMode ?? "auto";
       let cwd = "";
       try {
         cwd = Deno.cwd();
@@ -249,11 +248,19 @@ export class ClaudeCodeAdapter implements Adapter {
       const rateLimited = /429|rate[ -]?limit|too many requests/i.test(rawMsg);
       
       // Process exit code 1 詳細ログ
-      if (rawMsg.includes("exited with code 1")) {
-        console.error(`[${this.name}] Claude Code process exited with code 1`);
+      if (rawMsg.includes("exited with code")) {
+        const exitCodeMatch = rawMsg.match(/exited with code (\d+)/);
+        const exitCode = exitCodeMatch ? exitCodeMatch[1] : "unknown";
+        console.error(`[${this.name}] Claude Code process exited with code ${exitCode}`);
         console.error(`[${this.name}] Full error: ${rawMsg}`);
         console.error(`[${this.name}] Prompt length: ${actualPrompt.length} characters`);
         console.error(`[${this.name}] Options:`, JSON.stringify(options, null, 2));
+        
+        // Extract stderr if available
+        const stderrMatch = rawMsg.match(/stderr: (.+)/);
+        if (stderrMatch) {
+          console.error(`[${this.name}] Process stderr: ${stderrMatch[1]}`);
+        }
       }
       
       let cliPresence = "unknown";
@@ -297,8 +304,7 @@ export class ClaudeCodeAdapter implements Adapter {
     const options: Options = {
       maxTurns: this.config.maxTurns,
       model: this.config.model,
-      permissionMode: (this.config.claudePermissionMode ??
-        "bypassPermissions") as Options["permissionMode"],
+      permissionMode: this.config.claudePermissionMode as Options["permissionMode"] | undefined,
       ...((this.isFirstQuery && !this.config.continueSession) ? {} : { continue: true }),
       ...(this.config.sessionId && this.isFirstQuery
         ? { resume: this.config.sessionId }
@@ -423,7 +429,7 @@ export class ClaudeCodeAdapter implements Adapter {
 
       // 既存 query() と同等のヒント付きエラー
       const permissionMode =
-        this.config.claudePermissionMode ?? "bypassPermissions";
+        this.config.claudePermissionMode ?? "auto";
       let cwd = "";
       try {
         cwd = Deno.cwd();
@@ -441,12 +447,20 @@ export class ClaudeCodeAdapter implements Adapter {
       const rawMsg = error instanceof Error ? error.message : String(error);
       const rateLimited = /429|rate[ -]?limit|too many requests/i.test(rawMsg);
       
-      // Process exit code 1 詳細ログ (stream)
-      if (rawMsg.includes("exited with code 1")) {
-        console.error(`[${this.name}] Claude Code process exited with code 1 (stream)`);
+      // Process exit code 詳細ログ (stream)
+      if (rawMsg.includes("exited with code")) {
+        const exitCodeMatch = rawMsg.match(/exited with code (\d+)/);
+        const exitCode = exitCodeMatch ? exitCodeMatch[1] : "unknown";
+        console.error(`[${this.name}] Claude Code process exited with code ${exitCode} (stream)`);
         console.error(`[${this.name}] Full error: ${rawMsg}`);
         console.error(`[${this.name}] Prompt length: ${actualPrompt.length} characters`);
         console.error(`[${this.name}] Options:`, JSON.stringify(options, null, 2));
+        
+        // Extract stderr if available
+        const stderrMatch = rawMsg.match(/stderr: (.+)/);
+        if (stderrMatch) {
+          console.error(`[${this.name}] Process stderr: ${stderrMatch[1]}`);
+        }
       }
       
       let cliPresence = "unknown";

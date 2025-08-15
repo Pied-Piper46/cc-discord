@@ -11,7 +11,6 @@ function createConfig(overrides: Partial<Config> = {}): Config {
     discordToken: "DUMMY",
     channelId: "CHANNEL",
     userId: "USER",
-    debugMode: true,
     neverSleep: false,
     sessionId: overrides.sessionId,
     maxTurns: 3,
