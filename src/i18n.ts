@@ -128,6 +128,8 @@ interface LocaleMessages {
       workDir: string;
       mode: string;
       neverSleepEnabled: string;
+      continueMode: string;
+      resumeSession: string;
     };
     instructions: {
       header: string;
@@ -281,6 +283,8 @@ const messages: Record<Locale, LocaleMessages> = {
         workDir: "作業ディレクトリ",
         mode: "モード",
         neverSleepEnabled: "Never Sleep モード: 有効",
+        continueMode: "継続モード",
+        resumeSession: "セッション再開",
       },
       instructions: {
         header:
@@ -432,6 +436,8 @@ const messages: Record<Locale, LocaleMessages> = {
         workDir: "Working Directory",
         mode: "Mode",
         neverSleepEnabled: "Never Sleep Mode: Enabled",
+        continueMode: "Continue Mode",
+        resumeSession: "Resume Session",
       },
       instructions: {
         header: "Send a message in this thread and Claude Code will respond.",

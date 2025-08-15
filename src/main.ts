@@ -59,6 +59,9 @@ async function main() {
   if (options.resume) {
     config.sessionId = options.resume;
   }
+  if (options.continue) {
+    config.continueSession = true;
+  }
 
   // Initialize message bus and Actors
   const bus = new SimpleMessageBus();

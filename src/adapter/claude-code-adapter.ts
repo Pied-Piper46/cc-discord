@@ -1,6 +1,7 @@
 import { type Options, query as sdkQuery } from "@anthropic-ai/claude-code";
 import type { Adapter, ClaudeMessage } from "../types.ts";
 import type { Config } from "../config.ts";
+import { sessionHistory } from "../utils/session-history.ts";
 
 // DI interface to abstract Claude Code client
 export interface ClaudeClient {
@@ -45,6 +46,11 @@ export class ClaudeCodeAdapter implements Adapter {
       this.isFirstQuery = false;
       this.currentSessionId = config.sessionId;
     }
+    
+    // Set first query flag to false for continue sessions
+    if (config.continueSession) {
+      this.isFirstQuery = false;
+    }
 
     // Claude Code uses internal authentication, no API key needed
   }
@@ -54,6 +60,15 @@ export class ClaudeCodeAdapter implements Adapter {
     console.log(`[${this.name}] Model: ${this.config.model}`);
     if (this.currentSessionId) {
       console.log(`[${this.name}] Resuming session: ${this.currentSessionId}`);
+    }
+    
+    // --continue オプション時に会話履歴を表示
+    if (this.config.continueSession && !this.config.sessionId) {
+      const latestSessionId = await sessionHistory.getLatestSessionId();
+      if (latestSessionId) {
+        const messages = await sessionHistory.getConversationHistory(latestSessionId, 5);
+        sessionHistory.showConversationHistory(messages);
+      }
     }
   }
 
@@ -67,14 +82,31 @@ export class ClaudeCodeAdapter implements Adapter {
   // Send query to Claude API
   async query(
     prompt: string,
-    onProgress?: (message: ClaudeMessage) => Promise<void>
+    onProgress?: (message: ClaudeMessage) => Promise<void>,
+    isRetry = false
   ): Promise<string> {
+    // --continue オプション時、最初のクエリに会話履歴を含める
+    let actualPrompt = prompt;
+    if (this.config.continueSession && this.isFirstQuery && !this.config.sessionId) {
+      const latestSessionId = await sessionHistory.getLatestSessionId();
+      if (latestSessionId) {
+        const messages = await sessionHistory.getConversationHistory(latestSessionId, 5);
+        if (messages.length > 0) {
+          const historyText = messages.map(msg => 
+            `[${msg.type === "user" ? "User" : "Claude"}]: ${msg.content}`
+          ).join("\n");
+          actualPrompt = `以下は前回の会話の続きです:\n\n${historyText}\n\n---\n\n現在のメッセージ: ${prompt}`;
+          console.log(`[${this.name}] Including conversation history in prompt`);
+        }
+      }
+    }
+
     const options: Options = {
       maxTurns: this.config.maxTurns,
       model: this.config.model,
       permissionMode: (this.config.claudePermissionMode ??
         "bypassPermissions") as Options["permissionMode"],
-      ...(this.isFirstQuery ? {} : { continue: true }),
+      ...((this.isFirstQuery && !this.config.continueSession) ? {} : { continue: true }),
       ...(this.config.sessionId && this.isFirstQuery
         ? { resume: this.config.sessionId }
         : {}),
@@ -84,7 +116,7 @@ export class ClaudeCodeAdapter implements Adapter {
 
     try {
       const response = this.client.query({
-        prompt,
+        prompt: actualPrompt,
         options,
         abortController: this.abortController,
       });
@@ -152,6 +184,48 @@ export class ClaudeCodeAdapter implements Adapter {
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("Query was aborted");
       }
+      
+      // セッションが見つからないエラーをチェック
+      if (error instanceof Error && !isRetry) {
+        const errorMessage = error.message.toLowerCase();
+        const isSessionNotFound = 
+          errorMessage.includes("no conversation found with session id") ||
+          errorMessage.includes("session not found") ||
+          errorMessage.includes("invalid session") ||
+          errorMessage.includes("session does not exist");
+        
+        if (isSessionNotFound && (this.config.sessionId || this.config.continueSession)) {
+          console.log(`[${this.name}] Session not found error detected. Resetting session and retrying...`);
+          
+          // セッションをリセット
+          this.resetSession();
+          
+          // セッション関連の設定を一時的に無効化して再試行
+          const originalSessionId = this.config.sessionId;
+          const originalContinue = this.config.continueSession;
+          this.config.sessionId = undefined;
+          this.config.continueSession = false;
+          
+          try {
+            // リトライ（isRetry=trueで再帰呼び出しを防ぐ）
+            const result = await this.query(prompt, onProgress, true);
+            
+            // 設定を戻す
+            this.config.sessionId = originalSessionId;
+            this.config.continueSession = originalContinue;
+            
+            return result;
+          } catch (retryError) {
+            // 設定を戻す
+            this.config.sessionId = originalSessionId;
+            this.config.continueSession = originalContinue;
+            
+            // リトライも失敗した場合は元のエラー処理を続行
+            console.error(`[${this.name}] Retry failed:`, retryError);
+            // 元のエラーを投げる
+          }
+        }
+      }
 
       // Collect diagnostics (non-fatal, best-effort)
       const permissionMode =
@@ -194,13 +268,29 @@ export class ClaudeCodeAdapter implements Adapter {
   }
 
   // New: stream chunks API for MCP clients
-  async *queryStream(prompt: string): AsyncIterable<ClaudeStreamChunk> {
+  async *queryStream(prompt: string, isRetry = false): AsyncIterable<ClaudeStreamChunk> {
+    // --continue オプション時、最初のクエリに会話履歴を含める
+    let actualPrompt = prompt;
+    if (this.config.continueSession && this.isFirstQuery && !this.config.sessionId) {
+      const latestSessionId = await sessionHistory.getLatestSessionId();
+      if (latestSessionId) {
+        const messages = await sessionHistory.getConversationHistory(latestSessionId, 5);
+        if (messages.length > 0) {
+          const historyText = messages.map(msg => 
+            `[${msg.type === "user" ? "User" : "Claude"}]: ${msg.content}`
+          ).join("\n");
+          actualPrompt = `以下は前回の会話の続きです:\n\n${historyText}\n\n---\n\n現在のメッセージ: ${prompt}`;
+          console.log(`[${this.name}] Including conversation history in prompt (stream)`);
+        }
+      }
+    }
+
     const options: Options = {
       maxTurns: this.config.maxTurns,
       model: this.config.model,
       permissionMode: (this.config.claudePermissionMode ??
         "bypassPermissions") as Options["permissionMode"],
-      ...(this.isFirstQuery ? {} : { continue: true }),
+      ...((this.isFirstQuery && !this.config.continueSession) ? {} : { continue: true }),
       ...(this.config.sessionId && this.isFirstQuery
         ? { resume: this.config.sessionId }
         : {}),
@@ -210,7 +300,7 @@ export class ClaudeCodeAdapter implements Adapter {
 
     try {
       const response = this.client.query({
-        prompt,
+        prompt: actualPrompt,
         options,
         abortController: this.abortController,
       });
@@ -278,6 +368,48 @@ export class ClaudeCodeAdapter implements Adapter {
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
         throw new Error("Query was aborted");
+      }
+      
+      // セッションが見つからないエラーをチェック
+      if (error instanceof Error && !isRetry) {
+        const errorMessage = error.message.toLowerCase();
+        const isSessionNotFound = 
+          errorMessage.includes("no conversation found with session id") ||
+          errorMessage.includes("session not found") ||
+          errorMessage.includes("invalid session") ||
+          errorMessage.includes("session does not exist");
+        
+        if (isSessionNotFound && (this.config.sessionId || this.config.continueSession)) {
+          console.log(`[${this.name}] Session not found error detected in stream. Resetting and retrying...`);
+          
+          // セッションをリセット
+          this.resetSession();
+          
+          // セッション関連の設定を一時的に無効化して再試行
+          const originalSessionId = this.config.sessionId;
+          const originalContinue = this.config.continueSession;
+          this.config.sessionId = undefined;
+          this.config.continueSession = false;
+          
+          try {
+            // リトライ（isRetry=trueで再帰呼び出しを防ぐ）
+            yield* this.queryStream(prompt, true);
+            
+            // 設定を戻す
+            this.config.sessionId = originalSessionId;
+            this.config.continueSession = originalContinue;
+            
+            return; // リトライ成功
+          } catch (retryError) {
+            // 設定を戻す
+            this.config.sessionId = originalSessionId;
+            this.config.continueSession = originalContinue;
+            
+            // リトライも失敗した場合は元のエラー処理を続行
+            console.error(`[${this.name}] Stream retry failed:`, retryError);
+            // 元のエラーを投げる
+          }
+        }
       }
 
       // 既存 query() と同等のヒント付きエラー

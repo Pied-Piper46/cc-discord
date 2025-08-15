@@ -17,6 +17,7 @@ function createConfig(overrides: Partial<Config> = {}): Config {
     debugMode: true,
     neverSleep: false,
     sessionId: overrides.sessionId,
+    continueSession: overrides.continueSession,
     maxTurns: overrides.maxTurns ?? 3,
     model: overrides.model ?? "test-model",
     claudePermissionMode: overrides.claudePermissionMode,
@@ -95,5 +96,51 @@ Deno.test(
       const msg = e instanceof Error ? e.message : String(e);
       assertStringIncludes(msg, "rate_limited=true");
     }
+  }
+);
+
+Deno.test(
+  "ClaudeCodeAdapter: continueSession オプションで continue: true が設定される",
+  async () => {
+    const config = createConfig({ continueSession: true });
+
+    let capturedOptions: any = undefined;
+
+    const fakeClient: ClaudeClient = {
+      query: ({ options }) => {
+        capturedOptions = options;
+        // 空の非同期イテレータを返す
+        return (async function* () {})();
+      },
+    };
+
+    const adapter = new ClaudeCodeAdapter(config, fakeClient);
+    await adapter.query("hello"); // 実行して options をキャプチャ
+
+    // continueSession が true の場合、最初のクエリでも continue: true が設定される
+    assertEquals(capturedOptions?.continue, true);
+  }
+);
+
+Deno.test(
+  "ClaudeCodeAdapter: continueSession なしの初回クエリでは continue が設定されない",
+  async () => {
+    const config = createConfig({ continueSession: false });
+
+    let capturedOptions: any = undefined;
+
+    const fakeClient: ClaudeClient = {
+      query: ({ options }) => {
+        capturedOptions = options;
+        // 空の非同期イテレータを返す
+        return (async function* () {})();
+      },
+    };
+
+    const adapter = new ClaudeCodeAdapter(config, fakeClient);
+    await adapter.query("hello"); // 実行して options をキャプチャ
+
+    // continueSession が false の場合、初回クエリには continue が設定されない
+    assertEquals(capturedOptions?.continue, undefined);
   }
 );

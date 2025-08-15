@@ -9,6 +9,7 @@ import type { Adapter, MessageBus, ActorMessage } from "../types.ts";
 import type { Config } from "../config.ts";
 import { t } from "../i18n.ts";
 import { AuditLogger } from "../utils/audit-logger.ts";
+import { sessionHistory } from "../utils/session-history.ts";
 
 // Adapter that manages Discord connection
 export class DiscordAdapter implements Adapter {
@@ -136,7 +137,7 @@ export class DiscordAdapter implements Adapter {
       });
 
       // Send initial message
-      const initialMessage = this.createInitialMessage();
+      const initialMessage = await this.createInitialMessage();
       await this.currentThread.send(initialMessage);
 
       console.log(`[${this.name}] ${t("discord.threadCreated")} ${threadName}`);
@@ -145,8 +146,33 @@ export class DiscordAdapter implements Adapter {
     }
   }
 
-  private createInitialMessage(): string {
-    return `## ${t("discord.sessionInfo.title")}
+  private async createInitialMessage(): Promise<string> {
+    // 会話履歴を取得（--continueまたは--resumeオプション時）
+    let conversationHistory = "";
+    if (this.config.continueSession || this.config.sessionId) {
+      try {
+        let targetSessionId = this.config.sessionId;
+        
+        // --continueオプションの場合は最新セッションを取得
+        if (this.config.continueSession && !targetSessionId) {
+          const latestId = await sessionHistory.getLatestSessionId();
+          if (latestId) {
+            targetSessionId = latestId;
+          }
+        }
+        
+        if (targetSessionId) {
+          const messages = await sessionHistory.getConversationHistory(targetSessionId, 5);
+          if (messages.length > 0) {
+            conversationHistory = sessionHistory.formatConversationHistoryForDiscord(messages);
+          }
+        }
+      } catch (error) {
+        console.error(`[${this.name}] Failed to load conversation history:`, error);
+      }
+    }
+    
+    const sessionInfo = `## ${t("discord.sessionInfo.title")}
 
 **${t("discord.sessionInfo.startTime")}**: ${new Date().toISOString()}
 **${t("discord.sessionInfo.workDir")}**: \`${Deno.cwd()}\`
@@ -158,15 +184,30 @@ ${
     ? `**${t("discord.sessionInfo.neverSleepEnabled")}**`
     : ""
 }
+${
+  this.config.continueSession
+    ? `**${t("discord.sessionInfo.continueMode")}**: Enabled`
+    : ""
+}
+${
+  this.config.sessionId
+    ? `**${t("discord.sessionInfo.resumeSession")}**: ${this.config.sessionId}`
+    : ""
+}`;
 
----
-
-${t("discord.instructions.header")}
+    const instructions = `${t("discord.instructions.header")}
 - \`!reset\` or \`!clear\`: ${t("discord.instructions.reset")}
 - \`!stop\`: ${t("discord.instructions.stop")}
 - \`!exit\`: ${t("discord.instructions.exit")}
 - \`!<command>\`: ${t("discord.instructions.shellCommand")}
 - ${t("discord.instructions.normalMessage")}`;
+    
+    // 会話履歴がある場合は先頭に追加
+    if (conversationHistory) {
+      return `${conversationHistory}${sessionInfo}\n\n---\n\n${instructions}`;
+    } else {
+      return `${sessionInfo}\n\n---\n\n${instructions}`;
+    }
   }
 
   private async handleMessage(message: Message): Promise<void> {
@@ -337,7 +378,7 @@ ${t("discord.instructions.header")}
   private getStreamingConfig() {
     return {
       enabled: this.config.streamingEnabled ?? true,
-      mode: (this.config.streamingUpdateMode ?? "edit") as "edit" | "append",
+      mode: (this.config.streamingUpdateMode ?? "append") as "edit" | "append",
       interval: this.config.streamingIntervalMs ?? 1000,
       showThinking: this.config.streamingShowThinking ?? true,
       showDone: this.config.streamingShowDone ?? true,
@@ -410,7 +451,8 @@ ${t("discord.instructions.header")}
       mode: cfg.mode,
       channelId,
     };
-    if (cfg.showThinking && this.currentThread?.sendable) {
+    // appendモードでは「考え中...」メッセージを編集しないので、editモードの時のみ表示
+    if (cfg.showThinking && cfg.mode === "edit" && this.currentThread?.sendable) {
       try {
         const msg = await this.currentThread.send("🤔 考え中...");
         state.thinkingMessage = msg;
@@ -525,9 +567,9 @@ ${t("discord.instructions.header")}
     // Final flush pending buffers before sending final
     await this.flushNow(id);
 
-    // Remove thinking message
+    // Remove thinking message (editモードのみ)
     const cfg = this.getStreamingConfig();
-    if (cfg.showThinking && st?.thinkingMessage) {
+    if (cfg.mode === "edit" && cfg.showThinking && st?.thinkingMessage) {
       try {
         await st.thinkingMessage.delete();
       } catch {
@@ -537,10 +579,13 @@ ${t("discord.instructions.header")}
 
     // Final output using long message split
     try {
-      if (st?.thinkingMessage) {
-        await this.sendLongMessage(st.thinkingMessage, fullText);
-      } else {
-        await this.sendLongToCurrentThread(fullText);
+      // appendモードの場合は最終出力を送信しない（すでにストリーミングで送信済み）
+      if (cfg.mode === "edit") {
+        if (st?.thinkingMessage) {
+          await this.sendLongMessage(st.thinkingMessage, fullText);
+        } else {
+          await this.sendLongToCurrentThread(fullText);
+        }
       }
       if (cfg.showDone && this.currentThread) {
         await this.currentThread.send("✅ done");
@@ -565,15 +610,15 @@ ${t("discord.instructions.header")}
       clearTimeout(st.timer);
       st.timer = undefined;
     }
-    // Remove thinking message
-    if (st?.thinkingMessage) {
+    // Remove thinking message (editモードのみ)
+    const cfg = this.getStreamingConfig();
+    if (cfg.mode === "edit" && st?.thinkingMessage) {
       try {
         await st.thinkingMessage.delete();
       } catch {
         // ignore
       }
     }
-    const cfg = this.getStreamingConfig();
     if (cfg.showAbort && this.currentThread) {
       try {
         await this.currentThread.send(`⚠️ ストリーミング中断: ${message}`);

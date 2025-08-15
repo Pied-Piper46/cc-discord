@@ -9,6 +9,7 @@ export interface Config {
   debugMode: boolean;
   neverSleep: boolean;
   sessionId?: string;
+  continueSession?: boolean; // Continue existing session
   maxTurns: number;
   model: string;
   claudePermissionMode?: "bypassPermissions" | "ask";
@@ -137,7 +138,7 @@ export function loadConfig(debugMode = false): Config | null {
     claudePermissionMode,
     // Streaming defaults
     streamingEnabled: true,
-    streamingUpdateMode: "edit",
+    streamingUpdateMode: "append",  // Changed from "edit" to "append" - each update creates a new message
     streamingIntervalMs: 1000,
     streamingToolChunkPrefix: "📋 ツール実行結果:",
     streamingMaxChunkLength: 1800,
