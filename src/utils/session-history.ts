@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run -A --env
 
-import { join } from "https://deno.land/std@0.208.0/path/mod.ts";
+import { join } from "@std/path";
 
 // 会話メッセージの型定義
 export interface ConversationMessage {
@@ -59,11 +59,13 @@ export class SessionHistoryManager {
   }
 
   // セッションファイルをパース
-  private async parseSessionFile(filePath: string): Promise<SessionInfo | null> {
+  private async parseSessionFile(
+    filePath: string
+  ): Promise<SessionInfo | null> {
     try {
       const content = await Deno.readTextFile(filePath);
       const lines = content.trim().split("\n");
-      
+
       if (lines.length === 0) return null;
 
       // 最初の行からセッション情報を取得
@@ -87,8 +89,8 @@ export class SessionHistoryManager {
           if (lineData.type === "user" && lineData.message?.content) {
             const content = this.extractTextContent(lineData.message.content);
             if (content) {
-              sessionInfo.lastQuery = content.slice(0, 50) + 
-                (content.length > 50 ? "..." : "");
+              sessionInfo.lastQuery =
+                content.slice(0, 50) + (content.length > 50 ? "..." : "");
               break;
             }
           }
@@ -99,7 +101,10 @@ export class SessionHistoryManager {
 
       return sessionInfo;
     } catch (error) {
-      console.error(`[SessionHistory] Error parsing session file ${filePath}:`, error);
+      console.error(
+        `[SessionHistory] Error parsing session file ${filePath}:`,
+        error
+      );
       return null;
     }
   }
@@ -112,7 +117,7 @@ export class SessionHistoryManager {
     try {
       // セッションIDを含むファイルを探す
       let targetFile: string | undefined;
-      
+
       for await (const dirEntry of Deno.readDir(this.projectPath)) {
         if (dirEntry.isFile && dirEntry.name.includes(sessionId)) {
           targetFile = join(this.projectPath, dirEntry.name);
@@ -121,7 +126,10 @@ export class SessionHistoryManager {
       }
 
       if (!targetFile) {
-        console.log("[SessionHistory] Session history not found for:", sessionId);
+        console.log(
+          "[SessionHistory] Session history not found for:",
+          sessionId
+        );
         return [];
       }
 
@@ -133,13 +141,14 @@ export class SessionHistoryManager {
       for (const line of lines) {
         try {
           const data = JSON.parse(line);
-          
+
           if (data.type === "user" && data.message?.content) {
             const content = this.extractTextContent(data.message.content);
             if (content) {
               messages.push({
                 type: "user",
-                content: content.slice(0, 100) + (content.length > 100 ? "..." : ""),
+                content:
+                  content.slice(0, 100) + (content.length > 100 ? "..." : ""),
                 timestamp: data.timestamp,
               });
             }
@@ -148,7 +157,8 @@ export class SessionHistoryManager {
             if (content) {
               messages.push({
                 type: "assistant",
-                content: content.slice(0, 100) + (content.length > 100 ? "..." : ""),
+                content:
+                  content.slice(0, 100) + (content.length > 100 ? "..." : ""),
                 timestamp: data.timestamp,
               });
             }
@@ -161,7 +171,10 @@ export class SessionHistoryManager {
       // 最新のメッセージを返す
       return messages.slice(-limit);
     } catch (error) {
-      console.error("[SessionHistory] Error reading conversation history:", error);
+      console.error(
+        "[SessionHistory] Error reading conversation history:",
+        error
+      );
       return [];
     }
   }
@@ -171,12 +184,12 @@ export class SessionHistoryManager {
     if (typeof content === "string") {
       return content;
     }
-    
+
     if (Array.isArray(content)) {
       const textBlock = content.find((c: any) => c.type === "text");
       return textBlock?.text || "";
     }
-    
+
     return "";
   }
 
@@ -185,13 +198,13 @@ export class SessionHistoryManager {
     if (typeof content === "string") {
       return content;
     }
-    
+
     if (Array.isArray(content)) {
       return content
-        .map((c: any) => c.type === "text" ? c.text : "[ツール使用]")
+        .map((c: any) => (c.type === "text" ? c.text : "[ツール使用]"))
         .join(" ");
     }
-    
+
     return "";
   }
 
@@ -261,7 +274,7 @@ export function getSessionHistory(): SessionHistoryManager {
 // 後方互換性のため、プロパティとしてもエクスポート
 export const sessionHistory = {
   getSessionList: () => getSessionHistory().getSessionList(),
-  getConversationHistory: (sessionId: string, limit?: number) => 
+  getConversationHistory: (sessionId: string, limit?: number) =>
     getSessionHistory().getConversationHistory(sessionId, limit),
   formatConversationHistoryForDiscord: (messages: ConversationMessage[]) =>
     getSessionHistory().formatConversationHistoryForDiscord(messages),

@@ -9,10 +9,12 @@
     "jsr:@std/fmt@1": "1.0.8",
     "jsr:@std/fs@1": "1.0.19",
     "jsr:@std/fs@^1.0.19": "1.0.19",
+    "jsr:@std/internal@^1.0.10": "1.0.10",
     "jsr:@std/internal@^1.0.9": "1.0.10",
     "jsr:@std/io@0.225": "0.225.2",
-    "jsr:@std/path@1": "1.1.1",
-    "jsr:@std/path@^1.1.1": "1.1.1",
+    "jsr:@std/path@1": "1.1.2",
+    "jsr:@std/path@^1.1.1": "1.1.2",
+    "jsr:@std/path@^1.1.2": "1.1.2",
     "npm:@anthropic-ai/claude-code@latest": "1.0.72",
     "npm:@types/node@*": "22.15.15",
     "npm:discord-cf@latest": "0.1.1_@cloudflare+workers-types@4.20250810.0",
@@ -53,7 +55,7 @@
     "@std/fs@1.0.19": {
       "integrity": "051968c2b1eae4d2ea9f79a08a3845740ef6af10356aff43d3e2ef11ed09fb06",
       "dependencies": [
-        "jsr:@std/internal",
+        "jsr:@std/internal@^1.0.9",
         "jsr:@std/path@^1.1.1"
       ]
     },
@@ -66,10 +68,10 @@
         "jsr:@std/bytes"
       ]
     },
-    "@std/path@1.1.1": {
-      "integrity": "fe00026bd3a7e6a27f73709b83c607798be40e20c81dde655ce34052fd82ec76",
+    "@std/path@1.1.2": {
+      "integrity": "c0b13b97dfe06546d5e16bf3966b1cadf92e1cc83e56ba5476ad8b498d9e3038",
       "dependencies": [
-        "jsr:@std/internal"
+        "jsr:@std/internal@^1.0.10"
       ]
     }
   },
@@ -934,7 +936,7 @@
     "dependencies": [
       "jsr:@david/dax@~0.43.2",
       "jsr:@std/fs@^1.0.19",
-      "jsr:@std/path@^1.1.1",
+      "jsr:@std/path@^1.1.2",
       "npm:@anthropic-ai/claude-code@latest",
       "npm:discord-cf@latest",
       "npm:discord.js@^14.21.0"
