@@ -110,7 +110,7 @@ export function loadConfig(): Config | null {
     allowedUsers,
     neverSleep: false, // Set from CLI options
     maxTurns: 300,
-    model: "claude-opus-4-20250514",
+    model: "claude-sonnet-4-20250514",
     // Streaming defaults
     streamingEnabled: true,
     streamingUpdateMode: "append",  // Changed from "edit" to "append" - each update creates a new message
@@ -141,6 +141,6 @@ export function validateConfig(config: Config): boolean {
 // Default configuration
 export const DEFAULT_CONFIG = {
   maxTurns: 300,
-  model: "claude-opus-4-20250514",
+  model: "claude-sonnet-4-20250514",
   permissionMode: "ask",
 } as const;
