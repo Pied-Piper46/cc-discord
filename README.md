@@ -8,9 +8,11 @@ git clone https://github.com/Pied-Piper46/cc-discord.git
 ```
 
 2. set the environment variable
+```
 CC_DISCORD_TOKEN=""
 CC_DISCORD_CHANNEL_ID=""
 CC_DISCORD_USER_ID=""
+```
 
 3. activate ccdiscord
 ```bash
@@ -41,7 +43,7 @@ mkdir test && cd test
 ```
 
 2. set a permissions of claude code
-```
+```bash
 mkdir .claude
 touch .claude/settings.json
 ```
