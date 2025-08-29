@@ -1,5 +1,4 @@
 This repository has originated from @https://github.com/mizchi/ccdiscord. Added the documents of application details on `docs/` to break it down.
----
 
 # how to setup
 
